@@ -133,6 +133,131 @@
         </div>
     </div>
 </div>
+
+<!-- 查看详情模态框 -->
+<div v-if="showViewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">应用场景详情</h3>
+            <button @click="showViewModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6" v-if="viewData.application">
+            <!-- 应用基本信息 -->
+            <div class="mb-6">
+                <h4 class="text-md font-semibold mb-3 flex items-center">
+                    <i class="fas fa-file-alt text-blue-600 mr-2"></i>申请信息
+                </h4>
+                <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <span class="text-sm text-gray-500">应用名称</span>
+                            <p class="font-medium">{{ viewData.application.title }}</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">申报部门</span>
+                            <p class="font-medium">{{ viewData.application.department || '未分配' }}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500">联系方式</span>
+                        <p class="font-medium">{{ viewData.application.contact_info || '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500">当前状态</span>
+                        <p>
+                            <span :class="getStatusClass(viewData.application.status)" class="px-2 py-1 text-xs rounded-full">
+                                {{ getStatusText(viewData.application.status) }}
+                            </span>
+                        </p>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500">申报时间</span>
+                        <p class="font-medium">{{ formatDate(viewData.application.created_at) }}</p>
+                    </div>
+                    <div v-if="viewData.application.business_background">
+                        <span class="text-sm text-gray-500">业务背景</span>
+                        <p class="mt-1 text-gray-700 whitespace-pre-line">{{ viewData.application.business_background }}</p>
+                    </div>
+                    <div v-if="viewData.application.current_pain_points">
+                        <span class="text-sm text-gray-500">当前痛点</span>
+                        <p class="mt-1 text-gray-700 whitespace-pre-line">{{ viewData.application.current_pain_points }}</p>
+                    </div>
+                    <div v-if="viewData.application.expected_value">
+                        <span class="text-sm text-gray-500">预期价值</span>
+                        <p class="mt-1 text-gray-700 whitespace-pre-line">{{ viewData.application.expected_value }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 审批流程信息 -->
+            <div v-if="viewData.flow_nodes && viewData.flow_nodes.length > 0">
+                <h4 class="text-md font-semibold mb-3 flex items-center">
+                    <i class="fas fa-project-diagram text-green-600 mr-2"></i>审批流程
+                </h4>
+                <div class="space-y-3">
+                    <div v-for="(node, index) in viewData.flow_nodes" :key="node.id"
+                         class="border border-gray-200 rounded-lg p-4"
+                         :class="{
+                             'bg-green-50 border-green-200': node.status === 'completed' && node.action === 'approve',
+                             'bg-red-50 border-red-200': node.status === 'completed' && node.action === 'reject',
+                             'bg-blue-50 border-blue-200': node.type === 'start' || node.type === 'submit',
+                             'bg-gray-50': node.status === 'pending'
+                         }">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+                                     :class="{
+                                         'bg-green-500 text-white': node.status === 'completed' && node.action === 'approve',
+                                         'bg-red-500 text-white': node.status === 'completed' && node.action === 'reject',
+                                         'bg-blue-500 text-white': node.type === 'start' || node.type === 'submit',
+                                         'bg-gray-300 text-gray-500': node.status === 'pending'
+                                     }">
+                                    <i :class="getStepIconClass(node.type, node.action)"></i>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="font-medium text-gray-800">{{ node.name }}</p>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        <span v-if="node.actor_name">{{ node.actor_name }}</span>
+                                        <span v-if="node.created_at">{{ formatDate(node.created_at) }}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div>
+                                <span v-if="node.status === 'completed' && node.action === 'approve'" class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-600">
+                                    <i class="fas fa-check-circle mr-1"></i>已通过
+                                </span>
+                                <span v-if="node.status === 'completed' && node.action === 'reject'" class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-600">
+                                    <i class="fas fa-times-circle mr-1"></i>已拒绝
+                                </span>
+                                <span v-if="node.status === 'pending'" class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                    <i class="far fa-clock mr-1"></i>待处理
+                                </span>
+                                <span v-if="node.type === 'start' || node.type === 'submit'" class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-600">
+                                    <i class="fas fa-play-circle mr-1"></i>{{ node.type === 'start' ? '开始' : '已提交' }}
+                                </span>
+                            </div>
+                        </div>
+                        <div v-if="node.comments" class="mt-3 pt-3 border-t border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1">审批意见：</p>
+                            <p class="text-sm text-gray-700">{{ node.comments }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-else class="text-center py-8 text-gray-400">
+                <i class="fas fa-inbox text-3xl mb-2"></i>
+                <p>暂无审批流程记录</p>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end">
+            <button @click="showViewModal = false" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                关闭
+            </button>
+        </div>
+    </div>
+</div>
 {% endraw %}
 </div>
 {% endblock %}
@@ -149,7 +274,9 @@ createApp({
             filterStatus: '',
             searchKeyword: '',
             showCreateModal: false,
+            showViewModal: false,
             isAdmin: false,
+            viewData: {},
             newApp: {
                 title: '',
                 department: '',
@@ -229,12 +356,35 @@ createApp({
             if (!dateStr) return '-';
             return new Date(dateStr).toLocaleDateString('zh-CN');
         },
-        viewDetail(id) {
-            alert('查看功能待实现 - ID: ' + id);
+        getStepIconClass(type, action) {
+            if (type === 'start') return 'fas fa-flag-checkered';
+            if (type === 'submit') return 'fas fa-paper-plane';
+            if (type === 'review' || type === 'approve') {
+                if (action === 'approve') return 'fas fa-check';
+                if (action === 'reject') return 'fas fa-times';
+            }
+            return 'fas fa-circle';
         },
-        reviewApp(id) {
-            const approved = confirm('是否通过此申请？\n点击"确定"通过，点击"取消"拒绝');
-            const comments = prompt('请输入审核意见：');
+        async viewDetail(id) {
+            try {
+                const res = await fetch(`/api/applications/${id}/workflow-records`, {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                });
+                if (!res.ok) {
+                    showError('获取详情失败');
+                    return;
+                }
+                const data = await res.json();
+                this.viewData = data;
+                this.showViewModal = true;
+            } catch (err) {
+                console.error('获取详情失败:', err);
+                showError('获取详情失败');
+            }
+        },
+        async reviewApp(id) {
+            const approved = await showConfirm('是否通过此申请？', { confirmText: '通过', cancelText: '拒绝' });
+            const comments = await showPrompt('请输入审核意见：', { title: '审核意见' });
             if (comments !== null) {
                 fetch(`/api/applications/${id}/review?approved=${approved}&comments=${encodeURIComponent(comments)}`, {
                     method: 'POST',
@@ -242,38 +392,67 @@ createApp({
                 })
                 .then(res => res.json())
                 .then(data => {
-                    alert(data.message || '审核完成');
+                    showSuccess(data.message || '审核完成');
                     this.loadApplications();
                 })
-                .catch(err => alert('审核失败'));
+                .catch(err => showError('审核失败'));
             }
         },
-        submitApplication() {
+        async submitApplication() {
             if (!this.newApp.title) {
-                alert('请输入应用名称');
+                showError('请输入应用名称');
                 return;
             }
             const token = localStorage.getItem('token');
             const submitData = { ...this.newApp };
+            const workflowId = submitData.workflow_definition_id;
             if (!submitData.workflow_definition_id) {
                 delete submitData.workflow_definition_id;
             }
-            fetch('/api/applications/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify(submitData)
-            })
-            .then(res => res.json())
-            .then(data => {
-                alert('申报提交成功');
+
+            try {
+                // 1. 创建应用场景
+                const res = await fetch('/api/applications/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(submitData)
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    showError(data.detail || '提交失败');
+                    return;
+                }
+
+                const app = await res.json();
+                showSuccess('申报提交成功');
                 this.showCreateModal = false;
                 this.newApp = { title: '', department: '', contact_info: '', business_background: '', current_pain_points: '', expected_value: '', has_data: false, has_model: false, workflow_definition_id: '' };
                 this.loadApplications();
-            })
-            .catch(err => alert('提交失败'));
+
+                // 2. 如果绑定了工作流，启动工作流
+                if (workflowId) {
+                    await fetch(`/api/workflow-def/${workflowId}/start`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            record_type: 'application',
+                            record_id: app.id,
+                            application_id: app.id
+                        })
+                    });
+                    showInfo('工作流已启动，已通知审核人');
+                }
+            } catch (err) {
+                console.error('提交失败:', err);
+                showError('提交失败');
+            }
         },
         logout() {
             doLogout();

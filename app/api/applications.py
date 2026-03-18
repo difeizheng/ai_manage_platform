@@ -34,6 +34,111 @@ def list_applications(
     return applications
 
 
+@router.get("/{app_id}/workflow-records")
+def get_application_workflow_records(
+    app_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取应用的工作流记录和审批详情"""
+    # 获取应用详情
+    application = db.query(Application).filter(Application.id == app_id).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="应用场景不存在")
+
+    # 获取工作流定义
+    workflow_def = None
+    if application.workflow_definition_id:
+        workflow_def = db.query(WorkflowDefinition).filter(
+            WorkflowDefinition.id == application.workflow_definition_id
+        ).first()
+
+    # 获取所有工作流记录
+    workflow_records = db.query(WorkflowRecord).filter(
+        WorkflowRecord.application_id == app_id
+    ).order_by(WorkflowRecord.created_at.asc()).all()
+
+    # 构建审批流程信息
+    flow_nodes = []
+    if workflow_def and workflow_def.nodes:
+        nodes = workflow_def.nodes
+        edges = workflow_def.edges or []
+
+        # 获取所有审核人 ID
+        reviewer_ids = set()
+        for record in workflow_records:
+            if record.actor_id:
+                reviewer_ids.add(record.actor_id)
+
+        # 批量获取用户信息
+        users = db.query(User).filter(User.id.in_(reviewer_ids)).all() if reviewer_ids else []
+        user_map = {user.id: user for user in users}
+
+        # 为每个节点构建信息
+        for i, node in enumerate(nodes):
+            node_info = {
+                "id": node.get("id"),
+                "name": node.get("name", "节点"),
+                "type": node.get("type"),
+                "index": i,
+                "status": "pending",  # pending, completed, current
+                "action": None,
+                "actor": None,
+                "actor_name": None,
+                "comments": None,
+                "created_at": None
+            }
+
+            # 查找该节点的审批记录
+            for record in workflow_records:
+                if record.current_node_id == node.get("id"):
+                    # 跳过 start 和 submit 节点，只显示审核节点
+                    if node.get("type") in ["review", "approve"]:
+                        if record.action in ["approve", "reject"]:
+                            node_info["status"] = "completed"
+                            node_info["action"] = record.action
+                            node_info["comments"] = record.description
+                            node_info["created_at"] = record.created_at
+                            if record.actor_id and record.actor_id in user_map:
+                                actor = user_map[record.actor_id]
+                                node_info["actor"] = record.actor_id
+                                node_info["actor_name"] = actor.real_name or actor.username
+                    elif node.get("type") in ["start", "submit"]:
+                        # 提交节点
+                        if record.actor_id and record.actor_id in user_map:
+                            actor = user_map[record.actor_id]
+                            node_info["actor_name"] = actor.real_name or actor.username
+                            node_info["created_at"] = record.created_at
+                            node_info["status"] = "completed"
+
+            flow_nodes.append(node_info)
+
+    # 如果没有工作流定义，使用默认流程
+    if not workflow_def:
+        for record in workflow_records:
+            actor_name = None
+            if record.actor_id:
+                actor = db.query(User).filter(User.id == record.actor_id).first()
+                if actor:
+                    actor_name = actor.real_name or actor.username
+
+            flow_nodes.append({
+                "id": record.id,
+                "name": record.action,
+                "type": record.action,
+                "status": "completed",
+                "action": record.action,
+                "actor_name": actor_name,
+                "comments": record.description,
+                "created_at": record.created_at
+            })
+
+    return {
+        "application": application,
+        "workflow_definition": workflow_def,
+        "flow_nodes": flow_nodes
+    }
+
+
 @router.get("/{app_id}", response_model=ApplicationResponse)
 def get_application(app_id: int, db: Session = Depends(get_db)):
     """获取应用场景详情"""
