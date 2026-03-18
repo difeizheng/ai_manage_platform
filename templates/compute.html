@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block page_title %}算力资源{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">查看和申请 GPU 等算力资源</p>
+    </div>
+    <button v-if="isAdmin" @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>添加资源
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterType" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部类型</option>
+            <option value="GPU">GPU</option>
+            <option value="CPU">CPU</option>
+            <option value="TPU">TPU</option>
+        </select>
+        <select v-model="filterStatus" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部状态</option>
+            <option value="available">空闲</option>
+            <option value="in_use">使用中</option>
+            <option value="maintenance">维护中</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索资源名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 算力总览 -->
+<div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white mb-6">
+    <h3 class="text-lg font-semibold mb-4">算力资源总览</h3>
+    <div class="grid grid-cols-3 gap-6">
+        <div>
+            <p class="text-blue-200 text-sm">总算力</p>
+            <p class="text-3xl font-bold">{{ totalCompute.toFixed(1) }} <span class="text-lg">TFLOPS</span></p>
+        </div>
+        <div>
+            <p class="text-blue-200 text-sm">已用算力</p>
+            <p class="text-3xl font-bold">{{ usedCompute.toFixed(1) }} <span class="text-lg">TFLOPS</span></p>
+        </div>
+        <div>
+            <p class="text-blue-200 text-sm">使用率</p>
+            <p class="text-3xl font-bold">{{ computeRate }}%</p>
+        </div>
+    </div>
+</div>
+
+<!-- 资源列表 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-for="resource in filteredResources" :key="resource.id" class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-start justify-between mb-4">
+            <div class="w-12 h-12 rounded-lg flex items-center justify-center" :class="resource.resource_type === 'GPU' ? 'bg-green-100' : 'bg-blue-100'">
+                <i :class="resource.resource_type === 'GPU' ? 'fas fa-microchip text-green-600' : 'fas fa-server text-blue-600'" class="text-xl"></i>
+            </div>
+            <span :class="getStatusClass(resource.status)" class="px-2 py-1 text-xs rounded-full">
+                {{ getStatusText(resource.status) }}
+            </span>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ resource.name }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ resource.model_name || '未指定型号' }}</p>
+        <div class="space-y-2 mb-4">
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-500">显存/内存</span>
+                <span class="text-gray-800">{{ resource.memory_size || 0 }} GB</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-500">总算力</span>
+                <span class="text-gray-800">{{ resource.total_compute || 0 }} TFLOPS</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-500">已用算力</span>
+                <span class="text-gray-800">{{ resource.used_compute || 0 }} TFLOPS</span>
+            </div>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
+            <div class="bg-blue-600 h-2 rounded-full transition-all" :style="`width: ${resource.total_compute > 0 ? (resource.used_compute / resource.total_compute * 100) : 0}%`"></div>
+        </div>
+        <button v-if="resource.status === 'available'" @click="requestAccess(resource.id)" class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+            申请使用
+        </button>
+        <button v-else disabled class="w-full px-3 py-2 bg-gray-300 text-gray-500 rounded-lg text-sm cursor-not-allowed">
+            暂不可用
+        </button>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            resources: [],
+            filterType: '',
+            filterStatus: '',
+            searchKeyword: '',
+            isAdmin: false
+        }
+    },
+    computed: {
+        filteredResources() {
+            if (!this.resources || !Array.isArray(this.resources)) {
+                return [];
+            }
+            return this.resources.filter(r => {
+                const matchType = !this.filterType || r.resource_type === this.filterType;
+                const matchStatus = !this.filterStatus || r.status === this.filterStatus;
+                const matchKeyword = !this.searchKeyword || r.name.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchType && matchStatus && matchKeyword;
+            });
+        },
+        totalCompute() {
+            return this.resources.reduce((sum, r) => sum + (r.total_compute || 0), 0);
+        },
+        usedCompute() {
+            return this.resources.reduce((sum, r) => sum + (r.used_compute || 0), 0);
+        },
+        computeRate() {
+            return this.totalCompute > 0 ? ((this.usedCompute / this.totalCompute) * 100).toFixed(1) : 0;
+        }
+    },
+    mounted() {
+        this.loadResources();
+        this.checkAdmin();
+    },
+    methods: {
+        loadResources() {
+            fetch('/api/compute/')
+                .then(res => res.json())
+                .then(data => {
+                    this.resources = data;
+                });
+        },
+        checkAdmin() {
+            fetch('/api/auth/me', {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+            })
+            .then(res => res.json())
+            .then(user => {
+                this.isAdmin = user && user.role === 'admin';
+            })
+            .catch(() => {});
+        },
+        getStatusClass(status) {
+            const classes = {
+                'available': 'bg-green-100 text-green-600',
+                'in_use': 'bg-blue-100 text-blue-600',
+                'maintenance': 'bg-yellow-100 text-yellow-600'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-600';
+        },
+        getStatusText(status) {
+            const texts = {
+                'available': '空闲',
+                'in_use': '使用中',
+                'maintenance': '维护中'
+            };
+            return texts[status] || status;
+        },
+        requestAccess(id) {
+            const purpose = prompt('请输入使用目的：');
+            if (!purpose) return;
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/compute/${id}/request`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    request_type: 'compute',
+                    resource_id: id,
+                    resource_name: '算力资源',
+                    purpose: purpose
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('申请已提交，等待审批');
+            })
+            .catch(err => alert('申请失败'));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

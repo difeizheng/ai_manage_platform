@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block page_title %}数据集管理{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">浏览和申请使用数据集资源</p>
+    </div>
+    <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>上传数据集
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterDomain" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部业务领域</option>
+            <option value="finance">财务</option>
+            <option value="contract">合同</option>
+            <option value="utility">水电</option>
+            <option value="other">其他</option>
+        </select>
+        <select v-model="filterType" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部数据类型</option>
+            <option value="structured">结构化数据</option>
+            <option value="unstructured">非结构化数据</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索数据集名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 列表 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-for="dataset in filteredDatasets" :key="dataset.id" class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-start justify-between mb-4">
+            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <i class="fas fa-database text-green-600 text-xl"></i>
+            </div>
+            <span :class="dataset.status === 'available' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded-full">
+                {{ dataset.status === 'available' ? '可用' : dataset.status }}
+            </span>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ dataset.name }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ dataset.description || '暂无描述' }}</p>
+        <div class="flex flex-wrap gap-2 mb-4">
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ dataset.business_domain || '未分类' }}</span>
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ dataset.data_type === 'structured' ? '结构化' : '非结构化' }}</span>
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ dataset.record_count || 0 }} 条记录</span>
+        </div>
+        <div class="flex gap-2">
+            <button @click="viewDetail(dataset.id)" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">查看详情</button>
+            <button @click="requestAccess(dataset.id)" class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">申请使用</button>
+        </div>
+    </div>
+</div>
+
+<!-- 新建数据集模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">上传数据集</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">数据集名称 *</label>
+                <input v-model="newDataset.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="newDataset.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">业务领域</label>
+                    <select v-model="newDataset.business_domain" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="finance">财务</option>
+                        <option value="contract">合同</option>
+                        <option value="utility">水电</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">数据类型</label>
+                    <select v-model="newDataset.data_type" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="structured">结构化数据</option>
+                        <option value="unstructured">非结构化数据</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">记录数量</label>
+                <input v-model.number="newDataset.record_count" type="number" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitDataset" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">上传</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            datasets: [],
+            filterDomain: '',
+            filterType: '',
+            searchKeyword: '',
+            showCreateModal: false,
+            newDataset: {
+                name: '',
+                description: '',
+                business_domain: '',
+                data_type: '',
+                record_count: 0
+            }
+        }
+    },
+    computed: {
+        filteredDatasets() {
+            if (!this.datasets || !Array.isArray(this.datasets)) {
+                return [];
+            }
+            return this.datasets.filter(ds => {
+                const matchDomain = !this.filterDomain || ds.business_domain === this.filterDomain;
+                const matchType = !this.filterType || ds.data_type === this.filterType;
+                const matchKeyword = !this.searchKeyword || ds.name.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchDomain && matchType && matchKeyword;
+            });
+        }
+    },
+    mounted() {
+        this.loadDatasets();
+    },
+    methods: {
+        loadDatasets() {
+            fetch('/api/datasets/')
+                .then(res => res.json())
+                .then(data => {
+                    this.datasets = data;
+                });
+        },
+        viewDetail(id) {
+            fetch(`/api/datasets/${id}`)
+                .then(res => res.json())
+                .then(ds => {
+                    alert(`数据集详情:\n名称：${ds.name}\n描述：${ds.description || '无'}\n业务领域：${ds.business_domain || '未分类'}\n数据类型：${ds.data_type || '未分类'}\n记录数：${ds.record_count || 0}`);
+                });
+        },
+        requestAccess(id) {
+            const purpose = prompt('请输入使用目的：');
+            if (!purpose) return;
+            const duration = prompt('预计使用天数：', '30');
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/datasets/${id}/request`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    request_type: 'dataset',
+                    resource_id: id,
+                    resource_name: '数据集',
+                    purpose: purpose,
+                    expected_duration: parseInt(duration) || 30
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('申请已提交，等待审批');
+            })
+            .catch(err => alert('申请失败'));
+        },
+        submitDataset() {
+            if (!this.newDataset.name) {
+                alert('请输入数据集名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch('/api/datasets/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(this.newDataset)
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('数据集上传成功');
+                this.showCreateModal = false;
+                this.newDataset = { name: '', description: '', business_domain: '', data_type: '', record_count: 0 };
+                this.loadDatasets();
+            })
+            .catch(err => alert('上传失败'));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

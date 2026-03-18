@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}人工智能管理平台{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar-item:hover { background-color: rgba(255,255,255,0.1); }
+        .sidebar-item.active { background-color: rgba(255,255,255,0.2); }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-100">
+    <div class="flex h-screen overflow-hidden">
+        <!-- 侧边栏 -->
+        <aside class="w-64 gradient-bg text-white flex-shrink-0">
+            <div class="p-6">
+                <h1 class="text-xl font-bold"><i class="fas fa-brain mr-2"></i>AI 管理平台</h1>
+                <p class="text-xs text-gray-300 mt-1">人工智能管理平台</p>
+            </div>
+            <nav class="mt-4">
+                <a href="/" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/' %}active{% endif %}">
+                    <i class="fas fa-home w-6"></i>
+                    <span>首页</span>
+                </a>
+                <a href="/dashboard" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/dashboard' %}active{% endif %}">
+                    <i class="fas fa-chart-line w-6"></i>
+                    <span>数据看板</span>
+                </a>
+                <a href="/applications" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/applications' %}active{% endif %}">
+                    <i class="fas fa-file-alt w-6"></i>
+                    <span>应用场景</span>
+                </a>
+                <a href="/datasets" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/datasets' %}active{% endif %}">
+                    <i class="fas fa-database w-6"></i>
+                    <span>数据集管理</span>
+                </a>
+                <a href="/models" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/models' %}active{% endif %}">
+                    <i class="fas fa-robot w-6"></i>
+                    <span>模型管理</span>
+                </a>
+                <a href="/agents" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/agents' %}active{% endif %}">
+                    <i class="fas fa-microchip w-6"></i>
+                    <span>智能体管理</span>
+                </a>
+                <a href="/app-store" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/app-store' %}active{% endif %}">
+                    <i class="fas fa-store w-6"></i>
+                    <span>应用广场</span>
+                </a>
+                <a href="/compute" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/compute' %}active{% endif %}">
+                    <i class="fas fa-server w-6"></i>
+                    <span>算力资源</span>
+                </a>
+                <a href="/workflow" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/workflow' %}active{% endif %}">
+                    <i class="fas fa-project-diagram w-6"></i>
+                    <span>业务流程</span>
+                </a>
+                <a href="/workflow-design" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/workflow-design' %}active{% endif %}">
+                    <i class="fas fa-sitemap w-6"></i>
+                    <span>工作流设计</span>
+                </a>
+                <a href="/forum" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/forum' %}active{% endif %}">
+                    <i class="fas fa-comments w-6"></i>
+                    <span>AI 论坛</span>
+                </a>
+                <a href="/system" class="sidebar-item flex items-center px-6 py-3 {% if request.url.path == '/system' %}active{% endif %}">
+                    <i class="fas fa-cogs w-6"></i>
+                    <span>系统配置</span>
+                </a>
+            </nav>
+            <div class="absolute bottom-0 w-64 p-4 border-t border-gray-600">
+                <div id="user-info" class="text-sm">
+                    <p class="text-gray-300">当前用户：<span id="username">未登录</span></p>
+                    <button id="loginBtn" onclick="openLoginModal()" class="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs" style="display: none;">登录</button>
+                    <button id="logoutBtn" onclick="doLogout()" class="mt-2 text-xs text-gray-400 hover:text-white" style="display: none;">退出登录</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="flex-1 overflow-y-auto">
+            <!-- 顶部导航 -->
+            <header class="bg-white shadow-sm">
+                <div class="px-6 py-4 flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-800">{% block page_title %}首页{% endblock %}</h2>
+                    <div class="flex items-center space-x-4">
+                        <!-- 通知铃铛 -->
+                        <div class="relative" id="notificationContainer" style="display: none;">
+                            <button @click="toggleNotificationPanel" class="text-gray-500 hover:text-gray-700 relative">
+                                <i class="fas fa-bell"></i>
+                                {% raw %}
+                                <span v-if="unreadCount > 0" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                                    {{ unreadCount }}
+                                </span>
+                                {% endraw %}
+                            </button>
+                            <!-- 通知下拉面板 -->
+                            <div v-if="showNotificationPanel" class="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
+                                <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="font-semibold">通知</h3>
+                                    <button @click="markAllAsRead" class="text-xs text-blue-600 hover:text-blue-800">全部标为已读</button>
+                                </div>
+                                <div class="max-h-96 overflow-y-auto">
+                                    <div v-if="notifications.length === 0" class="p-8 text-center text-gray-400">
+                                        <i class="fas fa-bell-slash text-4xl mb-2"></i>
+                                        <p>暂无通知</p>
+                                    </div>
+                                    {% raw %}
+                                    <div v-for="notif in notifications" :key="notif.id"
+                                         class="p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                                         :class="!notif.is_read ? 'bg-blue-50' : ''"
+                                         @click="viewNotification(notif)">
+                                        <div class="flex items-start justify-between">
+                                            <div class="flex-1">
+                                                <p class="font-medium text-sm" :class="!notif.is_read ? 'text-blue-600' : ''">
+                                                    <i v-if="notif.type === 'workflow'" class="fas fa-project-diagram text-blue-500 mr-1"></i>
+                                                    <i v-else class="fas fa-bell text-gray-400 mr-1"></i>
+                                                    {{ notif.title }}
+                                                </p>
+                                                <p class="text-xs text-gray-500 mt-1">{{ notif.content }}</p>
+                                                <p class="text-xs text-gray-400 mt-2">{{ formatTime(notif.created_at) }}</p>
+                                            </div>
+                                            <button @click.stop="deleteNotification(notif.id)" class="text-gray-400 hover:text-red-600 ml-2">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {% endraw %}
+                                </div>
+                                <div class="p-3 border-t border-gray-200 text-center">
+                                    <a href="/notifications" class="text-xs text-blue-600 hover:text-blue-800">查看全部通知</a>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- 页面内容 -->
+            <div class="p-6">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <!-- 登录模态框 -->
+        <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+            <div class="bg-white rounded-xl w-full max-w-md">
+                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-lg font-semibold">用户登录</h3>
+                    <button onclick="closeLoginModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">用户名 *</label>
+                        <input id="loginUsername" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入用户名">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">密码 *</label>
+                        <input id="loginPassword" type="password" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入密码">
+                    </div>
+                    <div id="loginError" class="text-red-600 text-sm" style="display: none;"></div>
+                </div>
+                <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+                    <button onclick="closeLoginModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+                    <button onclick="doLogin()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">登录</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        // 获取存储的 token
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        // API 请求封装
+        async function apiRequest(url, options = {}) {
+            const token = getToken();
+            const defaultHeaders = {
+                'Content-Type': 'application/json',
+            };
+            if (token) {
+                defaultHeaders['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(API_BASE + url, {
+                ...options,
+                headers: {
+                    ...defaultHeaders,
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || '请求失败');
+            }
+
+            return response.json();
+        }
+
+        // 全局退出登录函数
+        function doLogout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+
+        // 登录模态框控制
+        function openLoginModal() {
+            document.getElementById('loginModal').style.display = 'flex';
+            document.getElementById('loginUsername').focus();
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('loginError').style.display = 'none';
+            document.getElementById('loginUsername').value = '';
+            document.getElementById('loginPassword').value = '';
+        }
+
+        // 登录函数
+        async function doLogin() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+
+            if (!username || !password) {
+                errorEl.textContent = '请输入用户名和密码';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams();
+                params.append('username', username);
+                params.append('password', password);
+
+                const response = await fetch(API_BASE + '/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: params
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '登录失败');
+                }
+
+                const data = await response.json();
+                localStorage.setItem('token', data.access_token);
+                closeLoginModal();
+
+                // 刷新页面以重新加载数据
+                window.location.reload();
+            } catch (err) {
+                errorEl.textContent = err.message || '登录失败，请检查用户名和密码';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        // 检查登录状态
+        async function checkLoginStatus() {
+            const token = getToken();
+            const usernameEl = document.getElementById('username');
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+
+            if (token) {
+                try {
+                    const user = await apiRequest('/auth/me');
+                    usernameEl.textContent = user.real_name || user.username;
+                    loginBtn.style.display = 'none';
+                    logoutBtn.style.display = 'block';
+                } catch (e) {
+                    usernameEl.textContent = '未登录';
+                    loginBtn.style.display = 'block';
+                    logoutBtn.style.display = 'none';
+                }
+            } else {
+                usernameEl.textContent = '未登录';
+                loginBtn.style.display = 'block';
+                logoutBtn.style.display = 'none';
+            }
+        }
+
+        // 页面加载时检查登录状态
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLoginStatus();
+            // 如果已登录，初始化通知组件
+            const token = localStorage.getItem('token');
+            if (token) {
+                initNotification();
+            }
+        });
+
+        // ============ 通知相关 ============
+        let notificationApp = null;
+
+        function initNotification() {
+            const container = document.getElementById('notificationContainer');
+            if (!container) return;
+
+            container.style.display = 'block';
+
+            notificationApp = Vue.createApp({
+                data() {
+                    return {
+                        notifications: [],
+                        unreadCount: 0,
+                        showNotificationPanel: false
+                    }
+                },
+                mounted() {
+                    this.loadNotifications();
+                    this.loadUnreadCount();
+                    // 每 30 秒刷新一次未读计数
+                    setInterval(() => {
+                        this.loadUnreadCount();
+                    }, 30000);
+                },
+                methods: {
+                    async loadNotifications() {
+                        try {
+                            const data = await apiRequest('/notification/my?limit=10');
+                            this.notifications = data.items || [];
+                        } catch (err) {
+                            console.error('加载通知失败:', err);
+                        }
+                    },
+                    async loadUnreadCount() {
+                        try {
+                            const data = await apiRequest('/notification/my/unread-count');
+                            this.unreadCount = data.unread_count;
+                        } catch (err) {
+                            console.error('加载未读计数失败:', err);
+                        }
+                    },
+                    toggleNotificationPanel() {
+                        this.showNotificationPanel = !this.showNotificationPanel;
+                        if (this.showNotificationPanel && this.notifications.length === 0) {
+                            this.loadNotifications();
+                        }
+                    },
+                    async viewNotification(notif) {
+                        if (!notif.is_read) {
+                            try {
+                                await apiRequest(`/notification/${notif.id}/read`, { method: 'PUT' });
+                                notif.is_read = true;
+                                this.unreadCount--;
+                            } catch (err) {
+                                console.error('标记已读失败:', err);
+                            }
+                        }
+                    },
+                    async markAllAsRead() {
+                        try {
+                            await apiRequest('/notification/read-all', { method: 'POST' });
+                            this.notifications.forEach(n => n.is_read = true);
+                            this.unreadCount = 0;
+                        } catch (err) {
+                            console.error('全部标为已读失败:', err);
+                        }
+                    },
+                    async deleteNotification(id) {
+                        if (!confirm('确定删除该通知吗？')) return;
+                        try {
+                            await apiRequest(`/notification/${id}`, { method: 'DELETE' });
+                            this.notifications = this.notifications.filter(n => n.id !== id);
+                        } catch (err) {
+                            console.error('删除通知失败:', err);
+                        }
+                    },
+                    formatTime(timeStr) {
+                        if (!timeStr) return '';
+                        const date = new Date(timeStr);
+                        const now = new Date();
+                        const diff = now - date;
+                        if (diff < 60000) return '刚刚';
+                        if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+                        if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+                        if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+                        return date.toLocaleDateString('zh-CN');
+                    }
+                }
+            });
+            notificationApp.mount('#notificationContainer');
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,1095 @@
+{% extends "base.html" %}
+
+{% block page_title %}工作流设计{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">可视化设计和管理工作流审核流程，支持模板快速创建</p>
+    </div>
+    <div class="flex gap-2">
+        <button @click="showTemplates = true" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+            <i class="fas fa-folder-open mr-2"></i>使用模板
+        </button>
+        <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+            <i class="fas fa-plus mr-2"></i>新建工作流
+        </button>
+    </div>
+</div>
+
+<!-- 工作流列表 -->
+<div class="bg-white rounded-xl shadow-sm overflow-hidden mb-6">
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">绑定类型</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">节点数</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">版本</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="wf in workflows" :key="wf.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <p class="font-medium text-gray-800">{{ wf.name }}</p>
+                    <p class="text-xs text-gray-500">{{ wf.description || '无描述' }}</p>
+                </td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded">{{ getTypeText(wf.bind_type) }}</span>
+                    <span v-if="wf.bind_subtype" class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded ml-1">{{ wf.bind_subtype }}</span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ (wf.nodes || []).length }} 个</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ wf.version }}</td>
+                <td class="px-6 py-4">
+                    <span :class="wf.is_active ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded-full">
+                        {{ wf.is_active ? '启用' : '停用' }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(wf.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <button @click="editWorkflow(wf)" class="text-blue-600 hover:text-blue-800 text-sm mr-3">
+                        <i class="fas fa-edit"></i> 编辑
+                    </button>
+                    <button @click="designWorkflow(wf)" class="text-green-600 hover:text-green-800 text-sm mr-3">
+                        <i class="fas fa-project-diagram"></i> 设计
+                    </button>
+                    <button @click="duplicateWorkflow(wf)" class="text-purple-600 hover:text-purple-800 text-sm mr-3" title="另存为新流程">
+                        <i class="fas fa-copy"></i> 另存为
+                    </button>
+                    <button @click="toggleStatus(wf)" class="text-yellow-600 hover:text-yellow-800 text-sm mr-3">
+                        {{ wf.is_active ? '停用' : '启用' }}
+                    </button>
+                    <button @click="deleteWorkflow(wf)" class="text-red-600 hover:text-red-800 text-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            <tr v-if="workflows.length === 0">
+                <td colspan="7" class="px-6 py-8 text-center text-gray-400">暂无工作流，点击右上角新建或使用模板创建</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 模板选择模态框 -->
+<div v-if="showTemplates" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-5xl h-[80vh] flex flex-col">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold"><i class="fas fa-folder-open mr-2"></i>选择工作流模板</h3>
+            <button @click="showTemplates = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6">
+            <div class="grid grid-cols-2 gap-4">
+                <div v-for="template in templates" :key="template.id"
+                     class="border-2 rounded-xl p-4 cursor-pointer transition-all hover:shadow-lg"
+                     :class="selectedTemplate?.id === template.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'"
+                     @click="selectTemplate(template)">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-lg">{{ template.name }}</h4>
+                        <span class="px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded">{{ getTypeText(template.bind_type) }}</span>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">{{ template.description || '无描述' }}</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-2">
+                            <span class="text-xs text-gray-500">{{ (template.nodes || []).length }} 个节点</span>
+                            <span class="text-xs text-gray-500">v{{ template.version }}</span>
+                        </div>
+                        <button @click.stop="previewTemplate(template)" class="text-blue-600 hover:text-blue-800 text-sm">
+                            <i class="fas fa-eye"></i> 预览
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showTemplates = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="createFromTemplate" :disabled="!selectedTemplate"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                <i class="fas fa-check mr-2"></i>使用此模板
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 新建工作流模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-lg">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">新建工作流</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">工作流名称 *</label>
+                <input v-model="newWorkflow.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="如：通用审批流程">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="newWorkflow.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="工作流用途描述"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">绑定类型 *</label>
+                    <select v-model="newWorkflow.bind_type" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="application">应用场景</option>
+                        <option value="dataset">数据集</option>
+                        <option value="model">模型</option>
+                        <option value="agent">智能体</option>
+                        <option value="compute">算力资源</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">子类型</label>
+                    <input v-model="newWorkflow.bind_subtype" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="如：new, review 等">
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="createWorkflow" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">创建</button>
+        </div>
+    </div>
+</div>
+
+<!-- 另存为新工作流模态框 -->
+<div v-if="showDuplicateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-lg">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">另存为新工作流</h3>
+            <button @click="showDuplicateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div class="bg-gray-50 p-3 rounded-lg">
+                <p class="text-sm text-gray-600">源工作流：<span class="font-medium text-gray-800">{{ duplicatingWorkflow?.name }}</span></p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">新工作流名称 *</label>
+                <input v-model="duplicateWorkflow.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="输入新名称">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="duplicateWorkflow.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2"></textarea>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showDuplicateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="confirmDuplicate" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存为新工作流</button>
+        </div>
+    </div>
+</div>
+
+<!-- 工作流设计器模态框 -->
+<div v-if="showDesigner" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @mouseup="stopDrag" @mousemove="onDrag">
+    <div class="bg-white rounded-xl w-full max-w-7xl h-[85vh] flex flex-col">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">
+                <i class="fas fa-project-diagram mr-2"></i>{{ currentWorkflow.name }} - 工作流设计器
+            </h3>
+            <div class="flex gap-2">
+                <button @click="autoLayout" class="px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm" title="自动排列">
+                    <i class="fas fa-align-left"></i> 自动排列
+                </button>
+                <button @click="zoomOut" class="px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm" title="缩小">
+                    <i class="fas fa-search-minus"></i>
+                </button>
+                <button @click="zoomIn" class="px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm" title="放大">
+                    <i class="fas fa-search-plus"></i>
+                </button>
+                <span class="px-3 py-1 text-gray-600 text-sm">{{ zoomLevel }}%</span>
+                <div class="border-l border-gray-300 h-6 mx-2"></div>
+                <button @click="addNode('submit')" class="px-3 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 text-sm">
+                    <i class="fas fa-file"></i> 提交
+                </button>
+                <button @click="addNode('review')" class="px-3 py-1 bg-yellow-100 text-yellow-600 rounded hover:bg-yellow-200 text-sm">
+                    <i class="fas fa-user-check"></i> 审核
+                </button>
+                <button @click="addNode('approve')" class="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 text-sm">
+                    <i class="fas fa-check-circle"></i> 审批
+                </button>
+                <button @click="addNode('notify')" class="px-3 py-1 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 text-sm">
+                    <i class="fas fa-bell"></i> 通知
+                </button>
+                <button @click="addNode('condition')" class="px-3 py-1 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 text-sm">
+                    <i class="fas fa-code-branch"></i> 条件
+                </button>
+                <div class="border-l border-gray-300 h-6 mx-2"></div>
+                <button @click="saveWorkflow" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <i class="fas fa-save mr-1"></i> 保存
+                </button>
+                <button @click="showDesigner = false" class="text-gray-400 hover:text-gray-600 ml-2">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden" ref="designerContainer">
+            <!-- 左侧节点列表 -->
+            <div class="w-64 bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto flex-shrink-0">
+                <h4 class="font-semibold text-gray-700 mb-3 flex items-center">
+                    <i class="fas fa-list mr-2"></i>节点列表
+                </h4>
+                <div v-for="(node, index) in nodes" :key="node.id"
+                     class="p-3 mb-2 rounded-lg cursor-grab active:cursor-grabbing border-2 transition-all hover:shadow-md"
+                     :class="selectedNode && selectedNode.id === node.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
+                     @click.stop="selectNode(node)"
+                     @mousedown="startDrag($event, node)">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i :class="getNodeIcon(node.type)" class="mr-2 text-lg"
+                               :style="{ color: getNodeColor(node.type) }"></i>
+                            <span class="text-sm font-medium">{{ node.name }}</span>
+                        </div>
+                        <button @click.stop="deleteNode(node)" class="text-gray-400 hover:text-red-500">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">{{ getNodeTypeName(node.type) }}</p>
+                </div>
+                <div v-if="nodes.length === 0" class="text-center text-gray-400 text-sm py-8">
+                    <i class="fas fa-inbox text-2xl mb-2"></i>
+                    <p>暂无节点，点击上方按钮添加</p>
+                </div>
+            </div>
+
+            <!-- 中间画布 -->
+            <div class="flex-1 bg-gray-100 relative overflow-hidden" ref="canvas"
+                 :style="{ transform: 'scale(' + zoomLevel / 100 + ')', transformOrigin: 'top left' }">
+                <!-- 网格背景 -->
+                <svg class="absolute inset-0 w-full h-full" style="opacity: 0.1;">
+                    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <circle cx="2" cy="2" r="1" fill="#666"/>
+                    </pattern>
+                    <rect width="100%" height="100%" fill="url(#grid)"/>
+                </svg>
+
+                <!-- 连接线 -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1;">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+                        </marker>
+                    </defs>
+                    <path v-for="(edge, index) in computedEdges" :key="index"
+                          :d="getEdgePath(edge)"
+                          fill="none"
+                          stroke="#666"
+                          stroke-width="2"
+                          marker-end="url(#arrowhead)"
+                          class="transition-all duration-200"/>
+                </svg>
+
+                <!-- 节点 -->
+                <div v-for="node in nodes" :key="node.id"
+                     class="absolute w-52 p-3 rounded-lg shadow-lg cursor-grab active:cursor-grabbing border-l-4 bg-white transition-shadow hover:shadow-xl"
+                     :style="{
+                         left: node.x + 'px',
+                         top: node.y + 'px',
+                         borderColor: getNodeColor(node.type),
+                         zIndex: selectedNode && selectedNode.id === node.id ? 10 : 1
+                     }"
+                     @mousedown="startDrag($event, node)"
+                     @click.stop="selectNode(node)"
+                     :class="selectedNode && selectedNode.id === node.id ? 'ring-2 ring-blue-500' : ''">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold">{{ node.name }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded font-medium"
+                              :style="{ backgroundColor: getNodeColor(node.type) + '20', color: getNodeColor(node.type) }">
+                            {{ getNodeTypeName(node.type) }}
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-2">
+                        <span v-if="node.config?.approver">{{ getApproverText(node.config.approver) }}</span>
+                        <span v-else>未配置</span>
+                    </p>
+                    <div class="flex gap-2">
+                        <button @click.stop="editNode(node)" class="flex-1 text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors">
+                            <i class="fas fa-cog mr-1"></i>配置
+                        </button>
+                        <button v-if="!isEndNode(node.id)" @click.stop="connectNode(node)"
+                                class="flex-1 text-xs px-2 py-1 rounded transition-colors"
+                                :class="connectingSource === node.id ? 'bg-green-100 text-green-600' : 'bg-gray-50 text-gray-600 hover:bg-green-50'">
+                            <i class="fas fa-link mr-1"></i>{{ connectingSource === node.id ? '选择目标' : '连接' }}
+                        </button>
+                    </div>
+                    <!-- 输入输出指示器 -->
+                    <div class="absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 rounded-full bg-gray-400"></div>
+                    <div class="absolute -right-1 top-1/2 transform -translate-y-1/2 w-2 h-2 rounded-full"
+                         :class="hasOutgoingEdge(node.id) ? 'bg-green-500' : 'bg-gray-300'"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 节点配置模态框 -->
+<div v-if="showNodeConfig" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-md">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h4 class="font-semibold flex items-center">
+                <i :class="getNodeIcon(editingNode.type)" class="mr-2" :style="{ color: getNodeColor(editingNode.type) }"></i>
+                配置 {{ editingNode.name }}
+            </h4>
+            <button @click="showNodeConfig = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">节点名称</label>
+                <input v-model="editingNode.name" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+            </div>
+            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve'">
+                <label class="block text-sm font-medium text-gray-700 mb-1">审核人角色</label>
+                <select v-model="editingNode.config.approver" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">请选择审核人角色</option>
+                    <option v-for="role in roleList" :key="role.code" :value="role.code">
+                        {{ role.name }} ({{ role.code }})
+                    </option>
+                    <option value="department_head">部门负责人</option>
+                    <option value="applicant_department">申请部门负责人</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">角色需在"系统配置 - 角色管理"中预先创建并分配给用户</p>
+            </div>
+            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve'">
+                <label class="block text-sm font-medium text-gray-700 mb-1">审批方式</label>
+                <select v-model="editingNode.config.approval_type" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="any">任意一人审批即可</option>
+                    <option value="all">所有人审批</option>
+                </select>
+            </div>
+            <div v-if="editingNode.type === 'condition'">
+                <label class="block text-sm font-medium text-gray-700 mb-1">条件表达式</label>
+                <input v-model="editingNode.config.condition" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="如：amount > 10000">
+                <p class="text-xs text-gray-500 mt-1">支持变量：amount(金额), department(部门), priority(优先级)</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">超时设置（小时）</label>
+                <input v-model.number="editingNode.config.timeout" type="number" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="24">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">节点说明</label>
+                <textarea v-model="editingNode.config.description" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="节点功能说明"></textarea>
+            </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showNodeConfig = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="saveNodeConfig" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存配置</button>
+        </div>
+    </div>
+</div>
+
+<!-- 模板预览模态框 -->
+<div v-if="showPreviewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-5xl h-[80vh] flex flex-col">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h4 class="font-semibold">模板预览：{{ previewingTemplate.name }}</h4>
+            <button @click="showPreviewModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="flex-1 bg-gray-100 p-4 overflow-hidden">
+            <div class="bg-white rounded-lg shadow p-4 h-full overflow-auto">
+                <div class="flex gap-4">
+                    <div v-for="node in (previewingTemplate.nodes || [])" :key="node.id"
+                         class="w-48 p-3 rounded-lg border-l-4 flex-shrink-0 bg-white shadow-md"
+                         :style="{ borderColor: getNodeColor(node.type) }"
+                         :class="previewNodes.some(n => n.id === node.id) ? 'opacity-100' : 'opacity-50'">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-semibold">{{ node.name }}</span>
+                            <i :class="getNodeIcon(node.type)" class="text-xs" :style="{ color: getNodeColor(node.type) }"></i>
+                        </div>
+                        <p class="text-xs text-gray-500">{{ getNodeTypeName(node.type) }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 flex justify-end">
+            <button @click="showPreviewModal = false" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">关闭</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+// 标准工作流模板
+const WORKFLOW_TEMPLATES = [
+    {
+        id: 'simple_approval',
+        name: '简单审批流程',
+        description: '提交 → 审核 → 审批，适用于常规审批场景',
+        bind_type: 'application',
+        bind_subtype: '',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '提交申请', x: 50, y: 100, config: { timeout: 24, description: '用户提交申请' } },
+            { id: 'node_2', type: 'review', name: '部门审核', x: 250, y: 100, config: { approver: 'department_head', approval_type: 'any', timeout: 48 } },
+            { id: 'node_3', type: 'approve', name: '最终审批', x: 450, y: 100, config: { approver: 'admin', approval_type: 'any', timeout: 24 } },
+            { id: 'node_4', type: 'notify', name: '结果通知', x: 650, y: 100, config: { timeout: 1 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' }
+        ]
+    },
+    {
+        id: 'multi_level_approval',
+        name: '多级审批流程',
+        description: '提交 → 部门审核 → 财务审核 → 管理员审批，适用于大额申请',
+        bind_type: 'application',
+        bind_subtype: 'high_value',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '提交申请', x: 50, y: 100, config: { timeout: 24 } },
+            { id: 'node_2', type: 'review', name: '部门初审', x: 250, y: 50, config: { approver: 'department_head', approval_type: 'any', timeout: 48 } },
+            { id: 'node_3', type: 'review', name: '财务审核', x: 450, y: 50, config: { approver: 'reviewer', approval_type: 'all', timeout: 24 } },
+            { id: 'node_4', type: 'approve', name: '管理员审批', x: 650, y: 50, config: { approver: 'admin', approval_type: 'any', timeout: 24 } },
+            { id: 'node_5', type: 'notify', name: '结果通知', x: 850, y: 50, config: { timeout: 1 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' },
+            { source: 'node_4', target: 'node_5' }
+        ]
+    },
+    {
+        id: 'dataset_workflow',
+        name: '数据集发布流程',
+        description: '提交 → 数据审核 → 发布，适用于数据集上架',
+        bind_type: 'dataset',
+        bind_subtype: 'publish',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '提交数据集', x: 50, y: 100, config: { timeout: 24 } },
+            { id: 'node_2', type: 'review', name: '数据质量审核', x: 250, y: 100, config: { approver: 'reviewer', approval_type: 'any', timeout: 72 } },
+            { id: 'node_3', type: 'approve', name: '发布审批', x: 450, y: 100, config: { approver: 'admin', approval_type: 'any', timeout: 24 } },
+            { id: 'node_4', type: 'notify', name: '上架通知', x: 650, y: 100, config: { timeout: 1 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' }
+        ]
+    },
+    {
+        id: 'model_workflow',
+        name: '模型上线流程',
+        description: '提交 → 技术评审 → 安全审核 → 上线审批',
+        bind_type: 'model',
+        bind_subtype: 'deploy',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '提交模型', x: 50, y: 100, config: { timeout: 24 } },
+            { id: 'node_2', type: 'review', name: '技术评审', x: 250, y: 50, config: { approver: 'reviewer', approval_type: 'all', timeout: 72 } },
+            { id: 'node_3', type: 'review', name: '安全审核', x: 450, y: 50, config: { approver: 'reviewer', approval_type: 'any', timeout: 48 } },
+            { id: 'node_4', type: 'approve', name: '上线审批', x: 650, y: 50, config: { approver: 'admin', approval_type: 'any', timeout: 24 } },
+            { id: 'node_5', type: 'notify', name: '上线通知', x: 850, y: 50, config: { timeout: 1 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' },
+            { source: 'node_4', target: 'node_5' }
+        ]
+    },
+    {
+        id: 'agent_workflow',
+        name: '智能体开发流程',
+        description: '立项 → 开发 → 测试 → 发布',
+        bind_type: 'agent',
+        bind_subtype: 'develop',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '立项申请', x: 50, y: 100, config: { timeout: 24 } },
+            { id: 'node_2', type: 'approve', name: '立项审批', x: 250, y: 100, config: { approver: 'admin', approval_type: 'any', timeout: 48 } },
+            { id: 'node_3', type: 'review', name: '开发完成评审', x: 450, y: 100, config: { approver: 'reviewer', approval_type: 'all', timeout: 72 } },
+            { id: 'node_4', type: 'review', name: '测试验收', x: 650, y: 100, config: { approver: 'reviewer', approval_type: 'any', timeout: 48 } },
+            { id: 'node_5', type: 'approve', name: '发布审批', x: 850, y: 100, config: { approver: 'admin', approval_type: 'any', timeout: 24 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' },
+            { source: 'node_4', target: 'node_5' }
+        ]
+    },
+    {
+        id: 'compute_workflow',
+        name: '算力资源申请流程',
+        description: '提交 → 资源审核 → 分配',
+        bind_type: 'compute',
+        bind_subtype: 'request',
+        version: '1.0',
+        nodes: [
+            { id: 'node_1', type: 'submit', name: '提交申请', x: 50, y: 100, config: { timeout: 24 } },
+            { id: 'node_2', type: 'review', name: '资源审核', x: 250, y: 100, config: { approver: 'reviewer', approval_type: 'any', timeout: 48 } },
+            { id: 'node_3', type: 'approve', name: '资源分配', x: 450, y: 100, config: { approver: 'admin', approval_type: 'any', timeout: 24 } },
+            { id: 'node_4', type: 'notify', name: '分配通知', x: 650, y: 100, config: { timeout: 1 } }
+        ],
+        edges: [
+            { source: 'node_1', target: 'node_2' },
+            { source: 'node_2', target: 'node_3' },
+            { source: 'node_3', target: 'node_4' }
+        ]
+    }
+];
+
+createApp({
+    data() {
+        return {
+            workflows: [],
+            templates: WORKFLOW_TEMPLATES,
+            showCreateModal: false,
+            showTemplates: false,
+            showDesigner: false,
+            showNodeConfig: false,
+            showDuplicateModal: false,
+            showPreviewModal: false,
+            currentWorkflow: null,
+            duplicatingWorkflow: null,
+            previewingTemplate: null,
+            previewNodes: [],
+            newWorkflow: {
+                name: '',
+                description: '',
+                bind_type: '',
+                bind_subtype: ''
+            },
+            duplicateWorkflow: {
+                name: '',
+                description: ''
+            },
+            selectedTemplate: null,
+            nodes: [],
+            edges: [],
+            selectedNode: null,
+            editingNode: null,
+            connectingSource: null,
+            isDragging: false,
+            draggingNode: null,
+            dragOffset: { x: 0, y: 0 },
+            zoomLevel: 100,
+            canvasSize: { width: 0, height: 0 },
+            // 角色列表 - 用于审核人角色选择
+            roleList: []
+        }
+    },
+    computed: {
+        computedEdges() {
+            return this.edges.map(edge => {
+                const sourceNode = this.nodes.find(n => n.id === edge.source);
+                const targetNode = this.nodes.find(n => n.id === edge.target);
+                return {
+                    ...edge,
+                    sourceX: sourceNode ? sourceNode.x + 200 : 0,
+                    sourceY: sourceNode ? sourceNode.y + 40 : 0,
+                    targetX: targetNode ? targetNode.x : 0,
+                    targetY: targetNode ? targetNode.y + 40 : 0
+                };
+            });
+        }
+    },
+    mounted() {
+        this.loadWorkflows();
+        this.loadRoles();
+        this.updateCanvasSize();
+        window.addEventListener('resize', this.updateCanvasSize);
+    },
+    beforeUnmount() {
+        window.removeEventListener('resize', this.updateCanvasSize);
+    },
+    methods: {
+        updateCanvasSize() {
+            const container = this.$refs.designerContainer;
+            if (container) {
+                this.canvasSize = {
+                    width: container.clientWidth,
+                    height: container.clientHeight
+                };
+            }
+        },
+        loadWorkflows() {
+            fetch('/api/workflow-def/')
+                .then(res => res.json())
+                .then(data => {
+                    this.workflows = data;
+                });
+        },
+        getTypeText(type) {
+            const types = {
+                'application': '应用场景',
+                'dataset': '数据集',
+                'model': '模型',
+                'agent': '智能体',
+                'compute': '算力资源'
+            };
+            return types[type] || type;
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('zh-CN');
+        },
+        createWorkflow() {
+            if (!this.newWorkflow.name || !this.newWorkflow.bind_type) {
+                alert('请填写工作流名称和绑定类型');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch('/api/workflow-def/?' + new URLSearchParams({
+                name: this.newWorkflow.name,
+                description: this.newWorkflow.description || '',
+                bind_type: this.newWorkflow.bind_type,
+                bind_subtype: this.newWorkflow.bind_subtype || ''
+            }), {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (!data) return;
+                alert('创建成功');
+                this.showCreateModal = false;
+                this.newWorkflow = { name: '', description: '', bind_type: '', bind_subtype: '' };
+                this.loadWorkflows();
+            })
+            .catch(err => alert('创建失败：' + (err.message || '未知错误')));
+        },
+        selectTemplate(template) {
+            this.selectedTemplate = template;
+        },
+        previewTemplate(template) {
+            this.previewingTemplate = template;
+            this.previewNodes = template.nodes || [];
+            this.showPreviewModal = true;
+        },
+        createFromTemplate() {
+            if (!this.selectedTemplate) return;
+            const template = this.selectedTemplate;
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            const name = prompt('请输入新工作流名称:', template.name + ' (副本)');
+            if (!name) return;
+
+            // 使用 POST body 发送 JSON 数据
+            fetch('/api/workflow-def/', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: template.description || '',
+                    bind_type: template.bind_type,
+                    bind_subtype: template.bind_subtype || '',
+                    nodes: template.nodes || [],
+                    edges: template.edges || []
+                })
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (!data) return;
+                alert('创建成功');
+                this.showTemplates = false;
+                this.selectedTemplate = null;
+                this.loadWorkflows();
+            })
+            .catch(err => alert('创建失败：' + (err.message || '未知错误')));
+        },
+        duplicateWorkflow(wf) {
+            this.duplicatingWorkflow = wf;
+            this.duplicateWorkflow = {
+                name: wf.name + ' (副本)',
+                description: wf.description || ''
+            };
+            this.showDuplicateModal = true;
+        },
+        confirmDuplicate() {
+            if (!this.duplicateWorkflow.name) {
+                alert('请填写新工作流名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            const wf = this.duplicatingWorkflow;
+            // 使用 POST body 发送 JSON 数据
+            fetch('/api/workflow-def/', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: this.duplicateWorkflow.name,
+                    description: this.duplicateWorkflow.description || '',
+                    bind_type: wf.bind_type,
+                    bind_subtype: wf.bind_subtype || '',
+                    nodes: wf.nodes || [],
+                    edges: wf.edges || []
+                })
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (!data) return;
+                alert('另存为成功');
+                this.showDuplicateModal = false;
+                this.loadWorkflows();
+            })
+            .catch(err => alert('保存失败：' + (err.message || '未知错误')));
+        },
+        editWorkflow(wf) {
+            this.currentWorkflow = wf;
+            this.nodes = JSON.parse(JSON.stringify(wf.nodes || []));
+            this.edges = JSON.parse(JSON.stringify(wf.edges || []));
+            this.showDesigner = true;
+        },
+        designWorkflow(wf) {
+            this.currentWorkflow = wf;
+            this.nodes = JSON.parse(JSON.stringify(wf.nodes || [])) || [];
+            this.edges = JSON.parse(JSON.stringify(wf.edges || [])) || [];
+            if (this.nodes.length === 0) {
+                // 如果是空的，加载默认节点
+                this.addNode('submit');
+            }
+            this.showDesigner = true;
+            this.$nextTick(() => {
+                this.autoLayout();
+            });
+        },
+        toggleStatus(wf) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/workflow-def/${wf.id}?is_active=${!wf.is_active}`, {
+                method: 'PUT',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                wf.is_active = !wf.is_active;
+            });
+        },
+        deleteWorkflow(wf) {
+            if (!confirm('确定删除此工作流？')) return;
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/workflow-def/${wf.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                this.loadWorkflows();
+            });
+        },
+        addNode(type) {
+            const newId = 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const nodeNames = {
+                'submit': '提交',
+                'review': '审核',
+                'approve': '审批',
+                'notify': '通知',
+                'condition': '条件分支',
+                'start': '开始',
+                'end': '结束'
+            };
+
+            // 计算新节点位置 - 放在最后一个节点右边
+            let newX = 50;
+            let newY = 100;
+            if (this.nodes.length > 0) {
+                const lastNode = this.nodes[this.nodes.length - 1];
+                newX = lastNode.x + 220;
+                newY = lastNode.y;
+            }
+
+            const newNode = {
+                id: newId,
+                type: type,
+                name: nodeNames[type] + '_' + (this.nodes.filter(n => n.type === type).length + 1),
+                x: newX,
+                y: newY,
+                config: {
+                    approver: 'admin',
+                    approval_type: 'any',
+                    timeout: 24,
+                    description: ''
+                }
+            };
+            this.nodes.push(newNode);
+
+            // 如果不是第一个节点，自动连接到前一个节点
+            if (this.nodes.length > 1) {
+                const prevNode = this.nodes[this.nodes.length - 2];
+                this.edges.push({ source: prevNode.id, target: newId });
+            }
+        },
+        deleteNode(node) {
+            this.nodes = this.nodes.filter(n => n.id !== node.id);
+            this.edges = this.edges.filter(e => e.source !== node.id && e.target !== node.id);
+        },
+        selectNode(node) {
+            this.selectedNode = node;
+        },
+        getNodeIcon(type) {
+            const icons = {
+                'submit': 'fas fa-file',
+                'review': 'fas fa-user-check',
+                'approve': 'fas fa-check-circle',
+                'notify': 'fas fa-bell',
+                'condition': 'fas fa-code-branch',
+                'start': 'fas fa-play-circle',
+                'end': 'fas fa-stop-circle'
+            };
+            return icons[type] || 'fas fa-circle';
+        },
+        getNodeColor(type) {
+            const colors = {
+                'submit': '#3B82F6',
+                'review': '#F59E0B',
+                'approve': '#10B981',
+                'notify': '#8B5CF6',
+                'condition': '#EC4899',
+                'start': '#3B82F6',
+                'end': '#6B7280'
+            };
+            return colors[type] || '#6B7280';
+        },
+        getNodeTypeName(type) {
+            const names = {
+                'submit': '提交',
+                'review': '审核',
+                'approve': '审批',
+                'notify': '通知',
+                'condition': '条件',
+                'start': '开始',
+                'end': '结束'
+            };
+            return names[type] || type;
+        },
+        getApproverText(approver) {
+            // 优先从角色列表中查找名称
+            const role = this.roleList.find(r => r.code === approver);
+            if (role) {
+                return role.name;
+            }
+            const texts = {
+                'admin': '管理员',
+                'reviewer': '审核员',
+                'department_head': '部门负责人',
+                'applicant_department': '申请部门负责人'
+            };
+            return texts[approver] || approver;
+        },
+        async loadRoles() {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            try {
+                const res = await fetch('/api/system/roles?is_active=true', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    this.roleList = await res.json();
+                }
+            } catch (err) {
+                console.error('加载角色列表失败:', err);
+            }
+        },
+        hasOutgoingEdge(nodeId) {
+            return this.edges.some(e => e.source === nodeId);
+        },
+        isEndNode(nodeId) {
+            return !this.edges.some(e => e.source === nodeId);
+        },
+        getEdgePath(edge) {
+            const sourceX = edge.sourceX || 0;
+            const sourceY = edge.sourceY || 0;
+            const targetX = edge.targetX || 0;
+            const targetY = edge.targetY || 0;
+
+            // 使用贝塞尔曲线
+            const deltaX = Math.abs(targetX - sourceX);
+            const controlPoint1X = sourceX + deltaX * 0.5;
+            const controlPoint1Y = sourceY;
+            const controlPoint2X = targetX - deltaX * 0.5;
+            const controlPoint2Y = targetY;
+
+            return `M ${sourceX} ${sourceY} C ${controlPoint1X} ${controlPoint1Y}, ${controlPoint2X} ${controlPoint2Y}, ${targetX} ${targetY}`;
+        },
+        startDrag(event, node) {
+            if (event.button !== 0) return; // 只响应左键
+            event.preventDefault();
+            event.stopPropagation();
+            this.isDragging = true;
+            this.draggingNode = node;
+            // 考虑缩放比例
+            const scale = this.zoomLevel / 100;
+            const canvas = this.$refs.canvas;
+            if (!canvas) return;
+            const canvasRect = canvas.getBoundingClientRect();
+            this.dragOffset = {
+                x: (event.clientX - canvasRect.left) / scale - node.x,
+                y: (event.clientY - canvasRect.top) / scale - node.y
+            };
+        },
+        onDrag(event) {
+            if (!this.isDragging || !this.draggingNode) return;
+            event.preventDefault();
+            const canvas = this.$refs.canvas;
+            if (!canvas) return;
+            // 考虑缩放比例
+            const scale = this.zoomLevel / 100;
+            const canvasRect = canvas.getBoundingClientRect();
+            const newX = (event.clientX - canvasRect.left) / scale - this.dragOffset.x;
+            const newY = (event.clientY - canvasRect.top) / scale - this.dragOffset.y;
+            this.draggingNode.x = newX;
+            this.draggingNode.y = newY;
+        },
+        stopDrag(event) {
+            this.isDragging = false;
+            this.draggingNode = null;
+        },
+        connectNode(node) {
+            if (this.connectingSource === null) {
+                this.connectingSource = node.id;
+            } else if (this.connectingSource !== node.id) {
+                const exists = this.edges.some(e => e.source === this.connectingSource && e.target === node.id);
+                if (!exists) {
+                    this.edges.push({ source: this.connectingSource, target: node.id });
+                }
+                this.connectingSource = null;
+            }
+        },
+        editNode(node) {
+            this.editingNode = JSON.parse(JSON.stringify(node));
+            if (!this.editingNode.config) {
+                // 默认使用第一个角色
+                const defaultRole = this.roleList.length > 0 ? this.roleList[0].code : 'admin';
+                this.editingNode.config = { approver: defaultRole, approval_type: 'any', timeout: 24 };
+            }
+            this.showNodeConfig = true;
+        },
+        saveNodeConfig() {
+            const index = this.nodes.findIndex(n => n.id === this.editingNode.id);
+            if (index !== -1) {
+                this.nodes[index] = this.editingNode;
+            }
+            this.showNodeConfig = false;
+            this.editingNode = null;
+        },
+        autoLayout() {
+            const spacing = 220;
+            const startY = 100;
+            const startX = 50;
+
+            // 简单的水平排列
+            this.nodes.forEach((node, index) => {
+                node.x = startX + index * spacing;
+                node.y = startY;
+            });
+        },
+        zoomIn() {
+            if (this.zoomLevel < 200) {
+                this.zoomLevel += 10;
+            }
+        },
+        zoomOut() {
+            if (this.zoomLevel > 50) {
+                this.zoomLevel -= 10;
+            }
+        },
+        saveWorkflow() {
+            if (this.nodes.length === 0) {
+                alert('请至少添加一个节点');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/workflow-def/${this.currentWorkflow.id}?` + new URLSearchParams({
+                name: this.currentWorkflow.name,
+                nodes: JSON.stringify(this.nodes),
+                edges: JSON.stringify(this.edges)
+            }), {
+                method: 'PUT',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (!data) return;
+                alert('保存成功');
+                this.showDesigner = false;
+                this.loadWorkflows();
+            })
+            .catch(err => alert('保存失败：' + (err.message || '未知错误')));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

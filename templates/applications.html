@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block page_title %}应用场景申报{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">提交和管理 AI 应用场景申报</p>
+    </div>
+    <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>新建申报
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterStatus" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部状态</option>
+            <option value="draft">草稿</option>
+            <option value="submitted">已提交</option>
+            <option value="under_review">审核中</option>
+            <option value="approved">已通过</option>
+            <option value="rejected">已拒绝</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索应用名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 列表 -->
+<div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">应用名称</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申报部门</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">联系人</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申报时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="app in filteredApplications" :key="app.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <div>
+                        <p class="font-medium text-gray-800">{{ app.title }}</p>
+                        <p class="text-xs text-gray-500">{{ app.business_background ? app.business_background.substring(0, 50) + '...' : '无描述' }}</p>
+                    </div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ app.department || '未分配' }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ app.contact_info || '-' }}</td>
+                <td class="px-6 py-4">
+                    <span :class="getStatusClass(app.status)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getStatusText(app.status) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(app.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <button @click="viewDetail(app.id)" class="text-blue-600 hover:text-blue-800 text-sm mr-3">查看</button>
+                    <button v-if="app.status === 'submitted' && isAdmin" @click="reviewApp(app.id)" class="text-green-600 hover:text-green-800 text-sm">审核</button>
+                </td>
+            </tr>
+            <tr v-if="!applications || applications.length === 0">
+                <td colspan="6" class="px-6 py-8 text-center text-gray-400">暂无数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 新建申报模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">新建应用场景申报</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">应用名称 *</label>
+                <input v-model="newApp.title" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入应用名称">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">申报部门</label>
+                    <input v-model="newApp.department" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">联系方式</label>
+                    <input v-model="newApp.contact_info" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">业务背景</label>
+                <textarea v-model="newApp.business_background" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请描述业务背景"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">当前痛点</label>
+                <textarea v-model="newApp.current_pain_points" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请描述当前业务痛点"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">预期价值</label>
+                <textarea v-model="newApp.expected_value" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请描述预期价值"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">绑定工作流</label>
+                <select v-model="newApp.workflow_definition_id" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">不使用工作流（默认流程）</option>
+                    <option v-for="wf in workflows" :key="wf.id" :value="wf.id">
+                        {{ wf.name }} ({{ wf.version }})
+                    </option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">选择已定义的工作流流程，否则使用默认审核流程</p>
+            </div>
+            <div class="flex gap-4">
+                <label class="flex items-center">
+                    <input v-model="newApp.has_data" type="checkbox" class="mr-2">
+                    <span class="text-sm text-gray-700">已具备数据</span>
+                </label>
+                <label class="flex items-center">
+                    <input v-model="newApp.has_model" type="checkbox" class="mr-2">
+                    <span class="text-sm text-gray-700">已具备模型</span>
+                </label>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitApplication" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">提交申报</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            applications: [],
+            workflows: [],
+            filterStatus: '',
+            searchKeyword: '',
+            showCreateModal: false,
+            isAdmin: false,
+            newApp: {
+                title: '',
+                department: '',
+                contact_info: '',
+                business_background: '',
+                current_pain_points: '',
+                expected_value: '',
+                has_data: false,
+                has_model: false,
+                workflow_definition_id: ''
+            }
+        }
+    },
+    computed: {
+        filteredApplications() {
+            if (!this.applications || !Array.isArray(this.applications)) {
+                return [];
+            }
+            return this.applications.filter(app => {
+                const matchStatus = !this.filterStatus || app.status === this.filterStatus;
+                const matchKeyword = !this.searchKeyword || app.title.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchStatus && matchKeyword;
+            });
+        }
+    },
+    mounted() {
+        this.loadApplications();
+        this.checkAdmin();
+        this.loadWorkflows();
+    },
+    methods: {
+        loadWorkflows() {
+            fetch('/api/workflow-def/?bind_type=application')
+                .then(res => res.json())
+                .then(data => {
+                    this.workflows = data;
+                });
+        },
+        loadApplications() {
+            fetch('/api/applications/')
+                .then(res => res.json())
+                .then(data => {
+                    this.applications = data;
+                });
+        },
+        checkAdmin() {
+            fetch('/api/auth/me', {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+            })
+            .then(res => res.json())
+            .then(user => {
+                this.isAdmin = user && (user.role === 'admin' || user.role === 'reviewer');
+            })
+            .catch(() => {});
+        },
+        getStatusClass(status) {
+            const classes = {
+                'draft': 'bg-gray-100 text-gray-600',
+                'submitted': 'bg-blue-100 text-blue-600',
+                'under_review': 'bg-yellow-100 text-yellow-600',
+                'approved': 'bg-green-100 text-green-600',
+                'rejected': 'bg-red-100 text-red-600'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-600';
+        },
+        getStatusText(status) {
+            const texts = {
+                'draft': '草稿',
+                'submitted': '已提交',
+                'under_review': '审核中',
+                'approved': '已通过',
+                'rejected': '已拒绝'
+            };
+            return texts[status] || status;
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleDateString('zh-CN');
+        },
+        viewDetail(id) {
+            alert('查看功能待实现 - ID: ' + id);
+        },
+        reviewApp(id) {
+            const approved = confirm('是否通过此申请？\n点击"确定"通过，点击"取消"拒绝');
+            const comments = prompt('请输入审核意见：');
+            if (comments !== null) {
+                fetch(`/api/applications/${id}/review?approved=${approved}&comments=${encodeURIComponent(comments)}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message || '审核完成');
+                    this.loadApplications();
+                })
+                .catch(err => alert('审核失败'));
+            }
+        },
+        submitApplication() {
+            if (!this.newApp.title) {
+                alert('请输入应用名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            const submitData = { ...this.newApp };
+            if (!submitData.workflow_definition_id) {
+                delete submitData.workflow_definition_id;
+            }
+            fetch('/api/applications/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(submitData)
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('申报提交成功');
+                this.showCreateModal = false;
+                this.newApp = { title: '', department: '', contact_info: '', business_background: '', current_pain_points: '', expected_value: '', has_data: false, has_model: false, workflow_definition_id: '' };
+                this.loadApplications();
+            })
+            .catch(err => alert('提交失败'));
+        },
+        logout() {
+            doLogout();
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

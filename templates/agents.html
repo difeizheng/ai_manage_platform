@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block page_title %}智能体管理{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">浏览和申请使用 AI 智能体/MCP 资源</p>
+    </div>
+    <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>创建智能体
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterType" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部类型</option>
+            <option value="MCP">MCP</option>
+            <option value="AI+ 业务">AI+ 业务场景</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索智能体名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 列表 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-for="agent in filteredAgents" :key="agent.id" class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-start justify-between mb-4">
+            <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                <i class="fas fa-microchip text-orange-600 text-xl"></i>
+            </div>
+            <span :class="agent.status === 'available' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded-full">
+                {{ agent.status === 'available' ? '可用' : agent.status }}
+            </span>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ agent.name }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ agent.description || '暂无描述' }}</p>
+        <div class="flex flex-wrap gap-2 mb-4">
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ agent.agent_type || '未分类' }}</span>
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ agent.business_domain || '未分配' }}</span>
+        </div>
+        <div class="flex gap-2">
+            <button @click="viewDetail(agent.id)" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">查看详情</button>
+            <button @click="requestAccess(agent.id)" class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">申请使用</button>
+        </div>
+    </div>
+</div>
+
+<!-- 新建智能体模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">创建智能体</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">智能体名称 *</label>
+                <input v-model="newAgent.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="newAgent.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">类型</label>
+                    <select v-model="newAgent.agent_type" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="MCP">MCP</option>
+                        <option value="AI+ 业务">AI+ 业务场景</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">业务领域</label>
+                    <input v-model="newAgent.business_domain" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitAgent" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">创建</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            agents: [],
+            filterType: '',
+            searchKeyword: '',
+            showCreateModal: false,
+            newAgent: {
+                name: '',
+                description: '',
+                agent_type: '',
+                business_domain: ''
+            }
+        }
+    },
+    computed: {
+        filteredAgents() {
+            if (!this.agents || !Array.isArray(this.agents)) {
+                return [];
+            }
+            return this.agents.filter(a => {
+                const matchType = !this.filterType || a.agent_type === this.filterType;
+                const matchKeyword = !this.searchKeyword || a.name.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchType && matchKeyword;
+            });
+        }
+    },
+    mounted() {
+        this.loadAgents();
+    },
+    methods: {
+        loadAgents() {
+            fetch('/api/agents/')
+                .then(res => res.json())
+                .then(data => {
+                    this.agents = data;
+                });
+        },
+        viewDetail(id) {
+            fetch(`/api/agents/${id}`)
+                .then(res => res.json())
+                .then(a => {
+                    alert(`智能体详情:\n名称：${a.name}\n描述：${a.description || '无'}\n类型：${a.agent_type || '未分类'}\n业务领域：${a.business_domain || '未分配'}`);
+                });
+        },
+        requestAccess(id) {
+            const purpose = prompt('请输入使用目的：');
+            if (!purpose) return;
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/agents/${id}/request`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    request_type: 'agent',
+                    resource_id: id,
+                    resource_name: '智能体',
+                    purpose: purpose
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('申请已提交，等待审批');
+            })
+            .catch(err => alert('申请失败'));
+        },
+        submitAgent() {
+            if (!this.newAgent.name) {
+                alert('请输入智能体名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch('/api/agents/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(this.newAgent)
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('智能体创建成功');
+                this.showCreateModal = false;
+                this.newAgent = { name: '', description: '', agent_type: '', business_domain: '' };
+                this.loadAgents();
+            })
+            .catch(err => alert('创建失败'));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

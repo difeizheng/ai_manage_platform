@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block page_title %}数据看板{% endblock %}
+
+{% block content %}
+<!-- 核心指标卡片 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+    <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-500 text-sm">AI 模型总数</p>
+                <p class="text-3xl font-bold text-gray-800 mt-2" id="model-count">-</p>
+            </div>
+            <div class="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-robot text-blue-600 text-xl"></i>
+            </div>
+        </div>
+        <div class="mt-4 flex items-center text-sm text-gray-500">
+            <span class="text-green-500 mr-1"><i class="fas fa-arrow-up"></i></span>
+            <span>持续更新中</span>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-500 text-sm">应用场景申报</p>
+                <p class="text-3xl font-bold text-gray-800 mt-2" id="application-count">-</p>
+            </div>
+            <div class="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-file-alt text-green-600 text-xl"></i>
+            </div>
+        </div>
+        <div class="mt-4 flex items-center text-sm text-gray-500">
+            <span>申报项目总数</span>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-500 text-sm">数据集数量</p>
+                <p class="text-3xl font-bold text-gray-800 mt-2" id="dataset-count">-</p>
+            </div>
+            <div class="w-14 h-14 bg-purple-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-database text-purple-600 text-xl"></i>
+            </div>
+        </div>
+        <div class="mt-4 flex items-center text-sm text-gray-500">
+            <span>结构化/非结构化</span>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-500 text-sm">智能体数量</p>
+                <p class="text-3xl font-bold text-gray-800 mt-2" id="agent-count">-</p>
+            </div>
+            <div class="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-microchip text-orange-600 text-xl"></i>
+            </div>
+        </div>
+        <div class="mt-4 flex items-center text-sm text-gray-500">
+            <span>MCP/Agent 等</span>
+        </div>
+    </div>
+</div>
+
+<!-- 算力资源卡片 -->
+<div class="bg-white rounded-xl p-6 shadow-sm mb-6">
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+        <i class="fas fa-server text-blue-500 mr-2"></i>算力资源概览
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="text-center">
+            <p class="text-gray-500 text-sm">总算力 (TFLOPS)</p>
+            <p class="text-3xl font-bold text-blue-600 mt-2" id="compute-total">-</p>
+        </div>
+        <div class="text-center">
+            <p class="text-gray-500 text-sm">已用算力 (TFLOPS)</p>
+            <p class="text-3xl font-bold text-orange-600 mt-2" id="compute-used">-</p>
+        </div>
+        <div class="text-center">
+            <p class="text-gray-500 text-sm">使用率</p>
+            <p class="text-3xl font-bold text-purple-600 mt-2" id="compute-rate">-</p>
+        </div>
+    </div>
+    <div class="mt-4">
+        <div class="w-full bg-gray-200 rounded-full h-3">
+            <div id="compute-progress" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 图表区域 -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <div class="bg-white rounded-xl p-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">模型类型分布</h3>
+        <div class="relative h-64">
+            <canvas id="models-chart"></canvas>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl p-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">应用场景部门分布</h3>
+        <div class="relative h-64">
+            <canvas id="applications-chart"></canvas>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl p-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">数据集业务领域分布</h3>
+        <div class="relative h-64">
+            <canvas id="datasets-chart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- 最近动态 -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-xl p-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+            <i class="fas fa-clock text-yellow-500 mr-2"></i>最近应用场景申报
+        </h3>
+        <div id="recent-applications" class="space-y-3">
+            <p class="text-gray-400 text-center py-4">加载中...</p>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl p-6 shadow-sm">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+            <i class="fas fa-clock text-blue-500 mr-2"></i>最近模型
+        </h3>
+        <div id="recent-models" class="space-y-3">
+            <p class="text-gray-400 text-center py-4">加载中...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let modelsChart, applicationsChart, datasetsChart;
+
+// 加载统计数据
+function loadStats() {
+    fetch('/api/dashboard/stats')
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('model-count').textContent = data.model_count || 0;
+            document.getElementById('application-count').textContent = data.application_count || 0;
+            document.getElementById('dataset-count').textContent = data.dataset_count || 0;
+            document.getElementById('agent-count').textContent = data.agent_count || 0;
+
+            document.getElementById('compute-total').textContent = (data.compute_total || 0).toFixed(1);
+            document.getElementById('compute-used').textContent = (data.compute_used || 0).toFixed(1);
+
+            const rate = data.compute_total > 0 ? ((data.compute_used / data.compute_total) * 100) : 0;
+            document.getElementById('compute-rate').textContent = rate.toFixed(1) + '%';
+            document.getElementById('compute-progress').style.width = rate.toFixed(1) + '%';
+        });
+}
+
+// 加载模型类型分布图表
+function loadModelsChart() {
+    fetch('/api/dashboard/models/chart')
+        .then(res => res.json())
+        .then(data => {
+            const ctx = document.getElementById('models-chart').getContext('2d');
+            modelsChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        data: data.values,
+                        backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        });
+}
+
+// 加载应用场景部门分布图表
+function loadApplicationsChart() {
+    fetch('/api/dashboard/applications/chart')
+        .then(res => res.json())
+        .then(data => {
+            const ctx = document.getElementById('applications-chart').getContext('2d');
+            applicationsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: '申报数量',
+                        data: data.values,
+                        backgroundColor: '#3B82F6',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        });
+}
+
+// 加载数据集业务领域分布图表
+function loadDatasetsChart() {
+    fetch('/api/dashboard/datasets/chart')
+        .then(res => res.json())
+        .then(data => {
+            const ctx = document.getElementById('datasets-chart').getContext('2d');
+            datasetsChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        data: data.values,
+                        backgroundColor: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        });
+}
+
+// 加载最近应用场景
+function loadRecentApplications() {
+    fetch('/api/dashboard/recent/applications')
+        .then(res => res.json())
+        .then(data => {
+            const container = document.getElementById('recent-applications');
+            if (data.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-4">暂无数据</p>';
+                return;
+            }
+            container.innerHTML = data.map(app => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                        <p class="font-medium text-gray-800">${app.title}</p>
+                        <p class="text-xs text-gray-500">${app.department || '未分配部门'} • ${new Date(app.created_at).toLocaleDateString('zh-CN')}</p>
+                    </div>
+                    <span class="px-2 py-1 text-xs rounded-full ${
+                        app.status === 'approved' ? 'bg-green-100 text-green-600' :
+                        app.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                        app.status === 'under_review' ? 'bg-yellow-100 text-yellow-600' :
+                        'bg-gray-100 text-gray-600'
+                    }">${app.status === 'submitted' ? '已提交' : app.status === 'approved' ? '已通过' : app.status === 'rejected' ? '已拒绝' : app.status}</span>
+                </div>
+            `).join('');
+        });
+}
+
+// 加载最近模型
+function loadRecentModels() {
+    fetch('/api/dashboard/recent/models')
+        .then(res => res.json())
+        .then(data => {
+            const container = document.getElementById('recent-models');
+            if (data.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-center py-4">暂无数据</p>';
+                return;
+            }
+            container.innerHTML = data.map(model => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                        <p class="font-medium text-gray-800">${model.name}</p>
+                        <p class="text-xs text-gray-500">${model.model_type || '未分类'} • v${model.version}</p>
+                    </div>
+                    <span class="text-xs text-gray-400">${new Date(model.created_at).toLocaleDateString('zh-CN')}</span>
+                </div>
+            `).join('');
+        });
+}
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadModelsChart();
+    loadApplicationsChart();
+    loadDatasetsChart();
+    loadRecentApplications();
+    loadRecentModels();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block page_title %}业务流程管理{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="mb-6">
+    <p class="text-gray-600">一站式查询和追溯 AI 应用全生命周期</p>
+</div>
+
+<!-- 搜索栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterType" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部类型</option>
+            <option value="application">应用场景</option>
+            <option value="dataset">数据集</option>
+            <option value="model">模型</option>
+            <option value="agent">智能体</option>
+            <option value="compute">算力</option>
+        </select>
+        <select v-model="filterAction" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部操作</option>
+            <option value="apply">申请</option>
+            <option value="review">审核</option>
+            <option value="approve">审批</option>
+            <option value="use">使用</option>
+            <option value="optimize">优化</option>
+            <option value="release">释放</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+        <button @click="loadRecords" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <i class="fas fa-search mr-1"></i> 搜索
+        </button>
+    </div>
+</div>
+
+<!-- 流程记录列表 -->
+<div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">详情</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="record in records" :key="record.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(record.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <span :class="getTypeClass(record.record_type)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getTypeText(record.record_type) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4">
+                    <span :class="getActionClass(record.action)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getActionText(record.action) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ record.description || '-' }}</td>
+                <td class="px-6 py-4">
+                    <button @click="viewDetail(record)" class="text-blue-600 hover:text-blue-800 text-sm">查看</button>
+                </td>
+            </tr>
+            <tr v-if="!records || records.length === 0">
+                <td colspan="5" class="px-6 py-8 text-center text-gray-400">暂无数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- traceability modal -->
+<div v-if="showDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">流程详情</h3>
+            <button @click="showDetailModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <div class="space-y-4">
+                <div class="flex items-center p-4 bg-blue-50 rounded-lg">
+                    <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                        <i class="fas fa-clock text-blue-600"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium text-gray-800">{{ selectedRecord.description || '无描述' }}</p>
+                        <p class="text-sm text-gray-500">{{ formatDate(selectedRecord.created_at) }}</p>
+                    </div>
+                </div>
+                <div class="border-l-2 border-blue-200 ml-5 pl-4 space-y-3">
+                    <div class="text-sm text-gray-600">
+                        <span class="font-medium">记录类型：</span> {{ getTypeText(selectedRecord.record_type) }}
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <span class="font-medium">操作类型：</span> {{ getActionText(selectedRecord.action) }}
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <span class="font-medium">记录 ID：</span> {{ selectedRecord.record_id }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end">
+            <button @click="showDetailModal = false" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">关闭</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            records: [],
+            filterType: '',
+            filterAction: '',
+            searchKeyword: '',
+            showDetailModal: false,
+            selectedRecord: {}
+        }
+    },
+    mounted() {
+        this.loadRecords();
+    },
+    methods: {
+        loadRecords() {
+            let url = '/api/workflow/?limit=100';
+            if (this.filterType) url += `&record_type=${this.filterType}`;
+            if (this.filterAction) url += `&action=${this.filterAction}`;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    this.records = data;
+                });
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString('zh-CN');
+        },
+        getTypeClass(type) {
+            const classes = {
+                'application': 'bg-blue-100 text-blue-600',
+                'dataset': 'bg-green-100 text-green-600',
+                'model': 'bg-purple-100 text-purple-600',
+                'agent': 'bg-orange-100 text-orange-600',
+                'compute': 'bg-red-100 text-red-600'
+            };
+            return classes[type] || 'bg-gray-100 text-gray-600';
+        },
+        getTypeText(type) {
+            const texts = {
+                'application': '应用场景',
+                'dataset': '数据集',
+                'model': '模型',
+                'agent': '智能体',
+                'compute': '算力'
+            };
+            return texts[type] || type;
+        },
+        getActionClass(action) {
+            const classes = {
+                'apply': 'bg-blue-100 text-blue-600',
+                'review': 'bg-yellow-100 text-yellow-600',
+                'approve': 'bg-green-100 text-green-600',
+                'use': 'bg-purple-100 text-purple-600',
+                'optimize': 'bg-indigo-100 text-indigo-600',
+                'release': 'bg-gray-100 text-gray-600'
+            };
+            return classes[action] || 'bg-gray-100 text-gray-600';
+        },
+        getActionText(action) {
+            const texts = {
+                'apply': '申请',
+                'review': '审核',
+                'approve': '审批',
+                'use': '使用',
+                'optimize': '优化',
+                'release': '释放'
+            };
+            return texts[action] || action;
+        },
+        viewDetail(record) {
+            this.selectedRecord = record;
+            this.showDetailModal = true;
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block page_title %}AI 知识论坛{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">分享 AI 知识与经验，促进交流学习</p>
+    </div>
+    <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>发布帖子
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterCategory" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部分类</option>
+            <option value="tech">技术分享</option>
+            <option value="case">案例分析</option>
+            <option value="qa">问答交流</option>
+            <option value="news">行业资讯</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索帖子标题..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 帖子列表 -->
+<div class="space-y-4">
+    <div v-for="post in filteredPosts" :key="post.id" class="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                    <h3 class="text-lg font-semibold text-gray-800 cursor-pointer hover:text-blue-600" @click="viewDetail(post.id)">
+                        {{ post.title }}
+                    </h3>
+                    <span v-if="post.is_pinned" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded">置顶</span>
+                    <span :class="getCategoryClass(post.category)" class="px-2 py-0.5 text-xs rounded">
+                        {{ getCategoryText(post.category) }}
+                    </span>
+                </div>
+                <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ post.content }}</p>
+                <div class="flex items-center gap-4 text-sm text-gray-500">
+                    <span><i class="fas fa-eye mr-1"></i> {{ post.view_count || 0 }}</span>
+                    <span><i class="fas fa-heart mr-1"></i> {{ post.like_count || 0 }}</span>
+                    <span><i class="fas fa-comment mr-1"></i> {{ post.comment_count || 0 }}</span>
+                    <span><i class="fas fa-clock mr-1"></i> {{ formatDate(post.created_at) }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div v-if="!posts || posts.length === 0" class="bg-white rounded-xl p-8 text-center text-gray-400">
+        暂无帖子
+    </div>
+</div>
+
+<!-- 发帖模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">发布新帖子</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
+                <input v-model="newPost.title" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入标题">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                <select v-model="newPost.category" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">请选择</option>
+                    <option value="tech">技术分享</option>
+                    <option value="case">案例分析</option>
+                    <option value="qa">问答交流</option>
+                    <option value="news">行业资讯</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">内容 *</label>
+                <textarea v-model="newPost.content" rows="8" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入内容"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">标签（用逗号分隔）</label>
+                <input v-model="newPost.tagsStr" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="例如：AI, NLP, 机器学习">
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitPost" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">发布</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            posts: [],
+            filterCategory: '',
+            searchKeyword: '',
+            showCreateModal: false,
+            newPost: {
+                title: '',
+                content: '',
+                category: '',
+                tagsStr: ''
+            }
+        }
+    },
+    computed: {
+        filteredPosts() {
+            if (!this.posts || !Array.isArray(this.posts)) {
+                return [];
+            }
+            return this.posts.filter(post => {
+                const matchCategory = !this.filterCategory || post.category === this.filterCategory;
+                const matchKeyword = !this.searchKeyword || post.title.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchCategory && matchKeyword;
+            });
+        }
+    },
+    mounted() {
+        this.loadPosts();
+    },
+    methods: {
+        loadPosts() {
+            fetch('/api/forum/')
+                .then(res => res.json())
+                .then(data => {
+                    this.posts = data;
+                });
+        },
+        getCategoryClass(category) {
+            const classes = {
+                'tech': 'bg-blue-100 text-blue-600',
+                'case': 'bg-green-100 text-green-600',
+                'qa': 'bg-yellow-100 text-yellow-600',
+                'news': 'bg-purple-100 text-purple-600'
+            };
+            return classes[category] || 'bg-gray-100 text-gray-600';
+        },
+        getCategoryText(category) {
+            const texts = {
+                'tech': '技术分享',
+                'case': '案例分析',
+                'qa': '问答交流',
+                'news': '行业资讯'
+            };
+            return texts[category] || category;
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = (now - date) / 1000;
+            if (diff < 60) return '刚刚';
+            if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+            if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+            if (diff < 604800) return Math.floor(diff / 86400) + '天前';
+            return date.toLocaleDateString('zh-CN');
+        },
+        viewDetail(id) {
+            fetch(`/api/forum/${id}`)
+                .then(res => res.json())
+                .then(post => {
+                    alert(`帖子详情:\n标题：${post.title}\n内容：${post.content.substring(0, 200)}...\n分类：${post.category || '未分类'}\n浏览：${post.view_count}\n点赞：${post.like_count}\n评论：${post.comment_count}`);
+                });
+        },
+        submitPost() {
+            if (!this.newPost.title || !this.newPost.content) {
+                alert('请输入标题和内容');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+
+            let tags = [];
+            if (this.newPost.tagsStr) {
+                tags = this.newPost.tagsStr.split(/[,,]/).filter(t => t.trim());
+            }
+
+            fetch('/api/forum/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    title: this.newPost.title,
+                    content: this.newPost.content,
+                    category: this.newPost.category,
+                    tags: tags
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('发帖成功');
+                this.showCreateModal = false;
+                this.newPost = { title: '', content: '', category: '', tagsStr: '' };
+                this.loadPosts();
+            })
+            .catch(err => alert('发帖失败'));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block page_title %}模型管理{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <p class="text-gray-600">浏览和申请使用 AI 模型</p>
+    </div>
+    <button @click="showCreateModal = true" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-plus mr-2"></i>上传模型
+    </button>
+</div>
+
+<!-- 筛选栏 -->
+<div class="bg-white rounded-xl p-4 shadow-sm mb-6">
+    <div class="flex flex-wrap gap-4">
+        <select v-model="filterType" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部模型类型</option>
+            <option value="NLP">NLP</option>
+            <option value="CV">CV</option>
+            <option value="ASR">ASR</option>
+            <option value="TTS">TTS</option>
+        </select>
+        <input type="text" v-model="searchKeyword" placeholder="搜索模型名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+    </div>
+</div>
+
+<!-- 列表 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-for="model in filteredModels" :key="model.id" class="bg-white rounded-xl p-6 shadow-sm card-hover transition-all">
+        <div class="flex items-start justify-between mb-4">
+            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <i class="fas fa-robot text-purple-600 text-xl"></i>
+            </div>
+            <span class="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded">{{ model.model_type || '未分类' }}</span>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ model.name }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ model.description || '暂无描述' }}</p>
+        <div class="flex flex-wrap gap-2 mb-4">
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">v{{ model.version }}</span>
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ model.framework || '未指定框架' }}</span>
+            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">下载 {{ model.download_count || 0 }} 次</span>
+        </div>
+        <div class="flex gap-2">
+            <button @click="viewDetail(model.id)" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">查看详情</button>
+            <button @click="requestAccess(model.id)" class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">申请使用</button>
+        </div>
+    </div>
+</div>
+
+<!-- 新建模型模态框 -->
+<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">上传模型</h3>
+            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">模型名称 *</label>
+                <input v-model="newModel.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="newModel.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">模型类型</label>
+                    <select v-model="newModel.model_type" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="NLP">NLP</option>
+                        <option value="CV">CV</option>
+                        <option value="ASR">ASR</option>
+                        <option value="TTS">TTS</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">框架</label>
+                    <select v-model="newModel.framework" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                        <option value="">请选择</option>
+                        <option value="PyTorch">PyTorch</option>
+                        <option value="TensorFlow">TensorFlow</option>
+                        <option value="ONNX">ONNX</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitModel" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">上传</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            models: [],
+            filterType: '',
+            searchKeyword: '',
+            showCreateModal: false,
+            newModel: {
+                name: '',
+                description: '',
+                model_type: '',
+                framework: ''
+            }
+        }
+    },
+    computed: {
+        filteredModels() {
+            if (!this.models || !Array.isArray(this.models)) {
+                return [];
+            }
+            return this.models.filter(m => {
+                const matchType = !this.filterType || m.model_type === this.filterType;
+                const matchKeyword = !this.searchKeyword || m.name.toLowerCase().includes(this.searchKeyword.toLowerCase());
+                return matchType && matchKeyword;
+            });
+        }
+    },
+    mounted() {
+        this.loadModels();
+    },
+    methods: {
+        loadModels() {
+            fetch('/api/models/')
+                .then(res => res.json())
+                .then(data => {
+                    this.models = data;
+                });
+        },
+        viewDetail(id) {
+            fetch(`/api/models/${id}`)
+                .then(res => res.json())
+                .then(m => {
+                    alert(`模型详情:\n名称：${m.name}\n描述：${m.description || '无'}\n类型：${m.model_type || '未分类'}\n框架：${m.framework || '未指定'}\n版本：${m.version}`);
+                });
+        },
+        requestAccess(id) {
+            const purpose = prompt('请输入使用目的：');
+            if (!purpose) return;
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/models/${id}/request`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    request_type: 'model',
+                    resource_id: id,
+                    resource_name: '模型',
+                    purpose: purpose
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('申请已提交，等待审批');
+            })
+            .catch(err => alert('申请失败'));
+        },
+        submitModel() {
+            if (!this.newModel.name) {
+                alert('请输入模型名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('name', this.newModel.name);
+            formData.append('description', this.newModel.description || '');
+            formData.append('model_type', this.newModel.model_type || '');
+            formData.append('framework', this.newModel.framework || '');
+
+            fetch('/api/models/', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('模型上传成功');
+                this.showCreateModal = false;
+                this.newModel = { name: '', description: '', model_type: '', framework: '' };
+                this.loadModels();
+            })
+            .catch(err => alert('上传失败'));
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}
