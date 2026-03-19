@@ -174,8 +174,8 @@ def get_application_workflow_records(
             node_info["pending_role"] = pending_info["role_name"]
             node_info["pending_users"] = pending_info["users"]
 
-            # 如果是 start 或 submit 节点，待处理信息为空
-            if node.get("type") in ["start", "submit"]:
+            # 如果是 start、submit 或 end 节点，待处理信息为空
+            if node.get("type") in ["start", "submit", "end"]:
                 node_info["pending_role"] = None
                 node_info["pending_users"] = []
 
@@ -243,21 +243,65 @@ def create_application(
     db.refresh(application)
 
     if workflow_def and workflow_def.nodes:
-        # 使用自定义工作流
+        # 使用自定义工作流 - 启动工作流并通知审核人
+        from app.api.workflow_def import get_next_node, get_approver_users
+        from app.models.models import Notification
+
         nodes = workflow_def.nodes
-        first_node = nodes[0] if nodes else None
-        if first_node:
-            workflow = WorkflowRecord(
-                workflow_definition_id=workflow_def_id,
-                application_id=application.id,
-                current_node_id=first_node.get('id'),
-                record_type="application",
-                record_id=application.id,
-                action=first_node.get('type', 'submit'),
-                actor_id=current_user.id,
-                description=f"提应用场景申报：{application.title} - 工作流：{workflow_def.name}",
-                node_status='pending'
-            )
+        edges = workflow_def.edges or []
+
+        # 找到第一个节点
+        start_node = None
+        for node in nodes:
+            if node.get('type') in ['start', 'submit']:
+                start_node = node
+                break
+
+        if not start_node:
+            start_node = nodes[0] if nodes else {'id': 'node_1', 'type': 'submit', 'name': '提交'}
+
+        # 创建工作流记录
+        workflow_record = WorkflowRecord(
+            workflow_definition_id=workflow_def_id,
+            application_id=application.id,
+            current_node_id=start_node.get('id'),
+            record_type="application",
+            record_id=application.id,
+            action=start_node.get('type', 'submit'),
+            actor_id=current_user.id,
+            description=f"提交应用场景申报：{application.title} - 工作流：{workflow_def.name}",
+            node_status='completed'
+        )
+        db.add(workflow_record)
+
+        # 获取下一个节点
+        next_node_info = get_next_node(nodes, start_node.get('id'), edges)
+        next_node = next_node_info.get('next_node')
+
+        # 如果是审核节点，通知审核人
+        approvers = []
+        if next_node and next_node.get('type') in ['review', 'approve']:
+            # 更新当前流程记录的节点为下一个审核节点
+            workflow_record.current_node_id = next_node.get('id')
+
+            approvers = get_approver_users(next_node.get('config', {}), db, current_user)
+
+            # 获取申请信息用于通知内容
+            app_info = f"\n申请名称：{application.title}\n申报部门：{application.department or '未分配'}"
+
+            # 为每个审核人创建站内通知
+            for approver in approvers:
+                notification = Notification(
+                    user_id=approver.id,
+                    title=f"待办审批：{workflow_def.name} - {next_node.get('name')}",
+                    content=f"您有一个待审批的流程节点：{next_node.get('name')}\n提交人：{current_user.real_name or current_user.username}{app_info}\n提交时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    type="workflow",
+                    related_type="workflow_record",
+                    related_id=workflow_record.id
+                )
+                db.add(notification)
+
+        db.commit()
     else:
         # 使用默认工作流
         workflow = WorkflowRecord(
@@ -268,9 +312,8 @@ def create_application(
             actor_id=current_user.id,
             description=f"提交应用场景申报：{application.title}"
         )
-
-    db.add(workflow)
-    db.commit()
+        db.add(workflow)
+        db.commit()
 
     return application
 

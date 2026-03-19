@@ -1,0 +1,579 @@
+{% extends "base.html" %}
+
+{% block page_title %}我的待办{% endblock %}
+
+{% block content %}
+<div id="app">
+{% raw %}
+<div class="mb-6">
+    <p class="text-gray-600">处理待审批的应用场景和资源申请</p>
+</div>
+
+<!-- 选项卡切换 -->
+<div class="bg-white rounded-xl shadow-sm mb-6">
+    <div class="flex border-b border-gray-200">
+        <button @click="activeTab = 'applications'"
+                :class="activeTab === 'applications' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="px-6 py-4 text-sm font-medium border-b-2 transition-colors">
+            <i class="fas fa-file-alt mr-2"></i>应用场景审批
+            <span v-if="appCount > 0" class="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{{ appCount }}</span>
+        </button>
+        <button @click="activeTab = 'requests'"
+                :class="activeTab === 'requests' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="px-6 py-4 text-sm font-medium border-b-2 transition-colors">
+            <i class="fas fa-database mr-2"></i>资源申请审批
+            <span v-if="requestCount > 0" class="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{{ requestCount }}</span>
+        </button>
+        <button @click="activeTab = 'workflow'"
+                :class="activeTab === 'workflow' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="px-6 py-4 text-sm font-medium border-b-2 transition-colors">
+            <i class="fas fa-project-diagram mr-2"></i>工作流审批
+            <span v-if="workflowCount > 0" class="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">{{ workflowCount }}</span>
+        </button>
+    </div>
+</div>
+
+<!-- 应用场景审批 -->
+<div v-if="activeTab === 'applications'" class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+        <div class="flex gap-2">
+            <select v-model="appFilterStatus" class="border border-gray-300 rounded-lg px-4 py-2">
+                <option value="">全部状态</option>
+                <option value="submitted">已提交</option>
+                <option value="under_review">审核中</option>
+                <option value="approved">已通过</option>
+                <option value="rejected">已拒绝</option>
+            </select>
+            <button @click="loadApplications" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <i class="fas fa-refresh"></i>
+            </button>
+        </div>
+        <p class="text-sm text-gray-500">共 {{ applications.length }} 条记录</p>
+    </div>
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">应用名称</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申报部门</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申报人</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申报时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="app in applications" :key="app.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <div>
+                        <p class="font-medium text-gray-800">{{ app.title }}</p>
+                        <p class="text-xs text-gray-500">{{ app.business_background ? app.business_background.substring(0, 50) + '...' : '无描述' }}</p>
+                    </div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ app.department || '-' }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ getApplicantName(app.applicant_id) }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(app.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <span :class="getStatusClass(app.status)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getStatusText(app.status) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4">
+                    <button v-if="app.status === 'submitted' || app.status === 'under_review'"
+                            @click="reviewApplication(app)"
+                            class="text-blue-600 hover:text-blue-800 text-sm mr-3">
+                        <i class="fas fa-check-circle mr-1"></i>审批
+                    </button>
+                    <button @click="viewApplicationDetail(app)" class="text-gray-600 hover:text-gray-800 text-sm">
+                        <i class="fas fa-eye mr-1"></i>查看
+                    </button>
+                </td>
+            </tr>
+            <tr v-if="applications.length === 0">
+                <td colspan="6" class="px-6 py-8 text-center text-gray-400">暂无数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 资源申请审批 -->
+<div v-if="activeTab === 'requests'" class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+        <div class="flex gap-2">
+            <select v-model="requestFilterType" class="border border-gray-300 rounded-lg px-4 py-2">
+                <option value="">全部类型</option>
+                <option value="dataset">数据集</option>
+                <option value="model">模型</option>
+                <option value="agent">智能体</option>
+                <option value="compute">算力资源</option>
+            </select>
+            <select v-model="requestFilterStatus" class="border border-gray-300 rounded-lg px-4 py-2">
+                <option value="">全部状态</option>
+                <option value="pending">待审批</option>
+                <option value="approved">已通过</option>
+                <option value="rejected">已拒绝</option>
+            </select>
+            <button @click="loadRequests" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <i class="fas fa-refresh"></i>
+            </button>
+        </div>
+        <p class="text-sm text-gray-500">共 {{ requests.length }} 条记录</p>
+    </div>
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">资源类型</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">资源名称</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申请人</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申请部门</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">申请时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="req in requests" :key="req.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4">
+                    <span :class="getRequestTypeClass(req.request_type)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getRequestTypeText(req.request_type) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-800">{{ req.resource_name }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ getReqApplicantName(req.applicant_id) }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ req.applicant_department || '-' }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(req.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <span :class="getRequestStatusClass(req.status)" class="px-2 py-1 text-xs rounded-full">
+                        {{ getRequestStatusText(req.status) }}
+                    </span>
+                </td>
+                <td class="px-6 py-4">
+                    <button v-if="req.status === 'pending'"
+                            @click="reviewRequest(req)"
+                            class="text-blue-600 hover:text-blue-800 text-sm mr-3">
+                        <i class="fas fa-check-circle mr-1"></i>审批
+                    </button>
+                    <button @click="viewRequestDetail(req)" class="text-gray-600 hover:text-gray-800 text-sm">
+                        <i class="fas fa-eye mr-1"></i>查看
+                    </button>
+                </td>
+            </tr>
+            <tr v-if="requests.length === 0">
+                <td colspan="7" class="px-6 py-8 text-center text-gray-400">暂无数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 工作流审批 -->
+<div v-if="activeTab === 'workflow'" class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+        <div class="flex gap-2">
+            <button @click="loadWorkflowApprovals" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <i class="fas fa-refresh"></i>
+            </button>
+        </div>
+        <p class="text-sm text-gray-500">共 {{ workflowApprovals.length }} 条记录</p>
+    </div>
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">流程名称</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">当前节点</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">提交人</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">提交时间</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            <tr v-for="item in workflowApprovals" :key="item.record.id" class="hover:bg-gray-50">
+                <td class="px-6 py-4 text-sm text-gray-800">{{ item.definition.name }}</td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-600">
+                        {{ item.currentNode?.name || '未知节点' }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ item.actor?.real_name || item.actor?.username || '-' }}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(item.record.created_at) }}</td>
+                <td class="px-6 py-4">
+                    <button @click="reviewWorkflow(item)"
+                            class="text-blue-600 hover:text-blue-800 text-sm mr-3">
+                        <i class="fas fa-check-circle mr-1"></i>审批
+                    </button>
+                    <button @click="viewWorkflowDetail(item)" class="text-gray-600 hover:text-gray-800 text-sm">
+                        <i class="fas fa-eye mr-1"></i>查看
+                    </button>
+                </td>
+            </tr>
+            <tr v-if="workflowApprovals.length === 0">
+                <td colspan="5" class="px-6 py-8 text-center text-gray-400">暂无待办审批</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 审批弹窗 -->
+<div v-if="showReviewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-lg">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">审批 {{ reviewItem?.title || reviewItem?.resource_name || '' }}</h3>
+            <button @click="showReviewModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div v-if="reviewItem?.business_background" class="bg-gray-50 p-4 rounded-lg">
+                <p class="text-sm font-medium text-gray-700 mb-2">业务背景</p>
+                <p class="text-sm text-gray-600">{{ reviewItem.business_background }}</p>
+            </div>
+            <div v-if="reviewItem?.purpose" class="bg-gray-50 p-4 rounded-lg">
+                <p class="text-sm font-medium text-gray-700 mb-2">申请用途</p>
+                <p class="text-sm text-gray-600">{{ reviewItem.purpose }}</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">审批结果 *</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center">
+                        <input v-model="reviewForm.approved" type="radio" :value="true" class="mr-2">
+                        <span class="text-green-600 font-medium">通过</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input v-model="reviewForm.approved" type="radio" :value="false" class="mr-2">
+                        <span class="text-red-600 font-medium">拒绝</span>
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">审批意见</label>
+                <textarea v-model="reviewForm.comments" rows="4" class="w-full border border-gray-300 rounded-lg px-4 py-2"
+                          placeholder="请输入审批意见"></textarea>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showReviewModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="submitReview" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">提交审批</button>
+        </div>
+    </div>
+</div>
+
+<!-- 详情弹窗 -->
+<div v-if="showDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">详情</h3>
+            <button @click="showDetailModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div v-if="detailItem?.title">
+                <h4 class="font-semibold text-lg mb-2">{{ detailItem.title }}</h4>
+                <div class="space-y-2 text-sm">
+                    <p><span class="text-gray-500">申报部门：</span>{{ detailItem.department || '-' }}</p>
+                    <p><span class="text-gray-500">联系方式：</span>{{ detailItem.contact_info || '-' }}</p>
+                    <p><span class="text-gray-500">业务背景：</span>{{ detailItem.business_background || '-' }}</p>
+                    <p><span class="text-gray-500">当前痛点：</span>{{ detailItem.current_pain_points || '-' }}</p>
+                    <p><span class="text-gray-500">预期价值：</span>{{ detailItem.expected_value || '-' }}</p>
+                </div>
+            </div>
+            <div v-else>
+                <div class="space-y-2 text-sm">
+                    <p><span class="text-gray-500">资源类型：</span>{{ getRequestTypeText(detailItem?.request_type) }}</p>
+                    <p><span class="text-gray-500">资源名称：</span>{{ detailItem?.resource_name || '-' }}</p>
+                    <p><span class="text-gray-500">申请用途：</span>{{ detailItem?.purpose || '-' }}</p>
+                    <p><span class="text-gray-500">申请部门：</span>{{ detailItem?.applicant_department || '-' }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end">
+            <button @click="showDetailModal = false" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">关闭</button>
+        </div>
+    </div>
+</div>
+{% endraw %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            activeTab: 'applications',
+            applications: [],
+            requests: [],
+            workflowApprovals: [],
+            users: [],
+            appCount: 0,
+            requestCount: 0,
+            workflowCount: 0,
+            appFilterStatus: '',
+            requestFilterType: '',
+            requestFilterStatus: '',
+            showReviewModal: false,
+            showDetailModal: false,
+            reviewItem: null,
+            detailItem: null,
+            reviewForm: {
+                approved: true,
+                comments: ''
+            },
+            reviewType: '' // 'application', 'request', 'workflow'
+        }
+    },
+    mounted() {
+        this.loadApplications();
+        this.loadUsers();
+        this.loadWorkflowApprovals();
+    },
+    methods: {
+        async loadUsers() {
+            const token = localStorage.getItem('token');
+            try {
+                const res = await fetch('/api/system/users', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    this.users = await res.json();
+                }
+            } catch (err) {
+                console.error('加载用户失败:', err);
+            }
+        },
+        getApplicantName(applicantId) {
+            const user = this.users.find(u => u.id === applicantId);
+            return user ? (user.real_name || user.username) : '未知';
+        },
+        getReqApplicantName(applicantId) {
+            const user = this.users.find(u => u.id === applicantId);
+            return user ? (user.real_name || user.username) : '未知';
+        },
+        async loadApplications() {
+            const token = localStorage.getItem('token');
+            let url = '/api/applications/?limit=100';
+            if (this.appFilterStatus) url += '&status=' + this.appFilterStatus;
+
+            try {
+                const res = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    const allApps = await res.json();
+                    // 过滤掉绑定了工作流的应用（它们会在工作流审批标签页中显示）
+                    this.applications = allApps.filter(app => !app.workflow_definition_id);
+                    this.appCount = this.applications.filter(a =>
+                        a.status === 'submitted' || a.status === 'under_review'
+                    ).length;
+                }
+            } catch (err) {
+                console.error('加载应用失败:', err);
+                showError('加载应用失败');
+            }
+        },
+        async loadRequests() {
+            const token = localStorage.getItem('token');
+            let url = '/api/application-requests/?limit=100';
+            if (this.requestFilterType) url += '&request_type=' + this.requestFilterType;
+            if (this.requestFilterStatus) url += '&status=' + this.requestFilterStatus;
+
+            try {
+                const res = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    this.requests = await res.json();
+                    this.requestCount = this.requests.filter(r => r.status === 'pending').length;
+                }
+            } catch (err) {
+                console.error('加载申请失败:', err);
+                showError('加载申请失败');
+            }
+        },
+        async loadWorkflowApprovals() {
+            const token = localStorage.getItem('token');
+            try {
+                const res = await fetch('/api/workflow-def/approvals/my', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.workflowApprovals = data;
+                    this.workflowCount = data.length;
+                }
+            } catch (err) {
+                console.error('加载工作流审批失败:', err);
+            }
+        },
+        reviewApplication(app) {
+            // 如果应用绑定了工作流，提示用户去工作流审批标签页
+            if (app.workflow_definition_id) {
+                showError('此应用已绑定工作流，请在"工作流审批"标签页中进行审批');
+                return;
+            }
+            this.reviewItem = app;
+            this.reviewType = 'application';
+            this.reviewForm = { approved: true, comments: '' };
+            this.showReviewModal = true;
+        },
+        reviewRequest(req) {
+            this.reviewItem = req;
+            this.reviewType = 'request';
+            this.reviewForm = { approved: true, comments: '' };
+            this.showReviewModal = true;
+        },
+        reviewWorkflow(item) {
+            this.reviewItem = item;
+            this.reviewType = 'workflow';
+            this.reviewForm = { approved: true, comments: '' };
+            this.showReviewModal = true;
+        },
+        async submitReview() {
+            const token = localStorage.getItem('token');
+            if (this.reviewType === 'application') {
+                await this.submitApplicationReview(token);
+            } else if (this.reviewType === 'request') {
+                await this.submitRequestReview(token);
+            } else if (this.reviewType === 'workflow') {
+                await this.submitWorkflowReview(token);
+            }
+        },
+        async submitApplicationReview(token) {
+            const url = `/api/applications/${this.reviewItem.id}/review?approved=${this.reviewForm.approved}&comments=${encodeURIComponent(this.reviewForm.comments)}`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('审批成功');
+                    this.showReviewModal = false;
+                    this.loadApplications();
+                } else {
+                    const data = await res.json();
+                    showError(data.detail || '审批失败');
+                }
+            } catch (err) {
+                showError('审批失败');
+            }
+        },
+        async submitRequestReview(token) {
+            const url = `/api/application-requests/${this.reviewItem.id}/review?approved=${this.reviewForm.approved}&comments=${encodeURIComponent(this.reviewForm.comments)}`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('审批成功');
+                    this.showReviewModal = false;
+                    this.loadRequests();
+                } else {
+                    const data = await res.json();
+                    showError(data.detail || '审批失败');
+                }
+            } catch (err) {
+                showError('审批失败');
+            }
+        },
+        async submitWorkflowReview(token) {
+            const { record, definition } = this.reviewItem;
+            const url = `/api/workflow-def/${definition.id}/record/${record.id}/action`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: this.reviewForm.approved ? 'approve' : 'reject',
+                        comments: this.reviewForm.comments
+                    })
+                });
+                if (res.ok) {
+                    showSuccess('审批成功');
+                    this.showReviewModal = false;
+                    this.loadWorkflowApprovals();
+                } else {
+                    const data = await res.json();
+                    showError(data.detail || '审批失败');
+                }
+            } catch (err) {
+                showError('审批失败');
+            }
+        },
+        viewApplicationDetail(app) {
+            this.detailItem = app;
+            this.showDetailModal = true;
+        },
+        viewRequestDetail(req) {
+            this.detailItem = req;
+            this.showDetailModal = true;
+        },
+        viewWorkflowDetail(item) {
+            this.detailItem = item;
+            this.showDetailModal = true;
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString('zh-CN');
+        },
+        getStatusClass(status) {
+            const classes = {
+                'draft': 'bg-gray-100 text-gray-600',
+                'submitted': 'bg-blue-100 text-blue-600',
+                'under_review': 'bg-yellow-100 text-yellow-600',
+                'approved': 'bg-green-100 text-green-600',
+                'rejected': 'bg-red-100 text-red-600'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-600';
+        },
+        getStatusText(status) {
+            const texts = {
+                'draft': '草稿',
+                'submitted': '已提交',
+                'under_review': '审核中',
+                'approved': '已通过',
+                'rejected': '已拒绝'
+            };
+            return texts[status] || status;
+        },
+        getRequestTypeClass(type) {
+            const classes = {
+                'dataset': 'bg-green-100 text-green-600',
+                'model': 'bg-purple-100 text-purple-600',
+                'agent': 'bg-orange-100 text-orange-600',
+                'compute': 'bg-red-100 text-red-600'
+            };
+            return classes[type] || 'bg-gray-100 text-gray-600';
+        },
+        getRequestTypeText(type) {
+            const texts = {
+                'dataset': '数据集',
+                'model': '模型',
+                'agent': '智能体',
+                'compute': '算力资源'
+            };
+            return texts[type] || type;
+        },
+        getRequestStatusClass(status) {
+            const classes = {
+                'pending': 'bg-yellow-100 text-yellow-600',
+                'approved': 'bg-green-100 text-green-600',
+                'rejected': 'bg-red-100 text-red-600'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-600';
+        },
+        getRequestStatusText(status) {
+            const texts = {
+                'pending': '待审批',
+                'approved': '已通过',
+                'rejected': '已拒绝'
+            };
+            return texts[status] || status;
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}
