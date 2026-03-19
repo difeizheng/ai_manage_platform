@@ -1,13 +1,13 @@
 """
 应用场景 API
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import Application, User, WorkflowRecord, WorkflowDefinition
+from app.models.models import Application, User, WorkflowRecord, WorkflowDefinition, Role, UserRole
 from app.schemas.schemas import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 from app.api.auth import get_current_user
 
@@ -18,20 +18,78 @@ router = APIRouter()
 def list_applications(
     skip: int = 0,
     limit: int = 100,
-    status: str = None,
-    department: str = None,
-    db: Session = Depends(get_db)
+    status: Optional[str] = Query(None, description="Filter by status"),
+    department: Optional[str] = Query(None, description="Filter by department"),
+    creator: Optional[str] = Query(None, description="Filter by creator ('me' for current user)"),
+    reviewer_id_filter: Optional[str] = Query(None, description="Filter by reviewer ID ('me' for current user)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """获取应用场景列表"""
+    """获取应用场景列表 - 支持数据权限控制"""
     query = db.query(Application)
 
+    # 数据权限控制：普通用户只能查看自己的应用
+    if current_user.role not in ['admin', 'reviewer']:
+        query = query.filter(Application.applicant_id == current_user.id)
+
+    # 按创建人过滤
+    if creator == 'me':
+        query = query.filter(Application.applicant_id == current_user.id)
+    elif creator and creator.isdigit():
+        query = query.filter(Application.applicant_id == int(creator))
+
+    # 按审批人过滤（我审批的应用）
+    if reviewer_id_filter == 'me':
+        query = query.filter(Application.reviewer_id == current_user.id)
+    elif reviewer_id_filter and reviewer_id_filter.isdigit():
+        query = query.filter(Application.reviewer_id == int(reviewer_id_filter))
+
+    # 按状态过滤
     if status:
         query = query.filter(Application.status == status)
+
+    # 按部门过滤
     if department:
         query = query.filter(Application.department == department)
 
-    applications = query.offset(skip).limit(limit).all()
+    applications = query.order_by(Application.created_at.desc()).offset(skip).limit(limit).all()
     return applications
+
+
+def get_node_pending_users(node_config, db, applicant_department=None):
+    """
+    根据节点配置获取待审核人员列表
+    返回：{"role_name": "角色名称", "users": ["用户 1", "用户 2", ...]}
+    """
+    from sqlalchemy import and_
+
+    approver = node_config.get('approver')
+    if not approver:
+        return {"role_name": "未配置角色", "users": []}
+
+    # 特殊处理：部门负责人、申请部门负责人
+    if approver == 'department_head':
+        # TODO: 根据申请人部门查找部门负责人
+        return {"role_name": "部门负责人", "users": ["待配置"]}
+    elif approver == 'applicant_department':
+        # TODO: 根据申请部门查找该部门的负责人
+        return {"role_name": f"{applicant_department or '申请'}部门负责人", "users": ["待配置"]}
+
+    # 根据角色 code 查找角色
+    role = db.query(Role).filter(Role.code == approver).first()
+    if not role:
+        return {"role_name": f"未知角色 ({approver})", "users": []}
+
+    # 查询拥有该角色的用户
+    user_roles = db.query(UserRole).filter(UserRole.role_id == role.id).all()
+    user_ids = [ur.user_id for ur in user_roles]
+    if not user_ids:
+        return {"role_name": role.name, "users": []}
+
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    user_names = [u.real_name or u.username for u in users]
+
+    return {"role_name": role.name, "users": user_names}
 
 
 @router.get("/{app_id}/workflow-records")
@@ -110,6 +168,17 @@ def get_application_workflow_records(
                             node_info["created_at"] = record.created_at
                             node_info["status"] = "completed"
 
+            # 添加待处理角色和待审核人员信息
+            node_config = node.get('config', {})
+            pending_info = get_node_pending_users(node_config, db, application.department)
+            node_info["pending_role"] = pending_info["role_name"]
+            node_info["pending_users"] = pending_info["users"]
+
+            # 如果是 start 或 submit 节点，待处理信息为空
+            if node.get("type") in ["start", "submit"]:
+                node_info["pending_role"] = None
+                node_info["pending_users"] = []
+
             flow_nodes.append(node_info)
 
     # 如果没有工作流定义，使用默认流程
@@ -155,20 +224,23 @@ def create_application(
     db: Session = Depends(get_db)
 ):
     """创建应用场景申报"""
-    application = Application(
-        **app_data.model_dump(),
-        applicant_id=current_user.id,
-        status="submitted"
-    )
-    db.add(application)
-    db.commit()
-    db.refresh(application)
-
     # 检查工作流绑定
     workflow_def_id = app_data.workflow_definition_id
     workflow_def = None
     if workflow_def_id:
         workflow_def = db.query(WorkflowDefinition).filter(WorkflowDefinition.id == workflow_def_id).first()
+
+    # 绑定了工作流的应用，状态设为 under_review；否则设为 submitted
+    application_status = "under_review" if workflow_def and workflow_def.nodes else "submitted"
+
+    application = Application(
+        **app_data.model_dump(),
+        applicant_id=current_user.id,
+        status=application_status
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
 
     if workflow_def and workflow_def.nodes:
         # 使用自定义工作流
@@ -244,11 +316,18 @@ def review_application(
     if not application:
         raise HTTPException(status_code=404, detail="应用场景不存在")
 
+    # 检查是否绑定了工作流
+    if application.workflow_definition_id:
+        # 绑定了工作流的应用，应该通过工作流接口审批
+        raise HTTPException(
+            status_code=400,
+            detail="此应用已绑定工作流，请在'我的待办'中进行审批"
+        )
+
+    # 没有绑定工作流，使用简单审批
     application.status = "approved" if approved else "rejected"
     application.review_comments = comments
     application.reviewer_id = current_user.id
-
-    db.commit()
 
     # 创建工作流记录
     workflow = WorkflowRecord(

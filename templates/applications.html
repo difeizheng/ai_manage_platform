@@ -16,8 +16,26 @@
 
 <!-- 筛选栏 -->
 <div class="bg-white rounded-xl p-4 shadow-sm mb-6">
-    <div class="flex flex-wrap gap-4">
-        <select v-model="filterStatus" class="border border-gray-300 rounded-lg px-4 py-2">
+    <div class="flex flex-wrap gap-4 items-center">
+        <!-- 过滤选项卡 -->
+        <div class="flex border border-gray-300 rounded-lg overflow-hidden">
+            <button @click="filterTab = 'all'; loadApplications()"
+                    :class="filterTab === 'all' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                    class="px-4 py-2 text-sm font-medium transition-colors">
+                全部应用
+            </button>
+            <button @click="filterTab = 'mine'; loadApplications()"
+                    :class="filterTab === 'mine' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                    class="px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300">
+                我创建的
+            </button>
+            <button v-if="isAdmin" @click="filterTab = 'reviewed'; loadApplications()"
+                    :class="filterTab === 'reviewed' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                    class="px-4 py-2 text-sm font-medium transition-colors border-l border-gray-300">
+                我审批的
+            </button>
+        </div>
+        <select v-model="filterStatus" @change="loadApplications()" class="border border-gray-300 rounded-lg px-4 py-2">
             <option value="">全部状态</option>
             <option value="draft">草稿</option>
             <option value="submitted">已提交</option>
@@ -25,7 +43,16 @@
             <option value="approved">已通过</option>
             <option value="rejected">已拒绝</option>
         </select>
-        <input type="text" v-model="searchKeyword" placeholder="搜索应用名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+        <select v-model="filterDepartment" @change="loadApplications()" class="border border-gray-300 rounded-lg px-4 py-2">
+            <option value="">全部部门</option>
+            <option value="技术部">技术部</option>
+            <option value="财务部">财务部</option>
+            <option value="人力资源部">人力资源部</option>
+            <option value="运营部">运营部</option>
+            <option value="市场部">市场部</option>
+            <option value="管理层">管理层</option>
+        </select>
+        <input type="text" v-model="searchKeyword" @input="debounceSearch()" placeholder="搜索应用名称..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
     </div>
 </div>
 
@@ -60,7 +87,8 @@
                 <td class="px-6 py-4 text-sm text-gray-600">{{ formatDate(app.created_at) }}</td>
                 <td class="px-6 py-4">
                     <button @click="viewDetail(app.id)" class="text-blue-600 hover:text-blue-800 text-sm mr-3">查看</button>
-                    <button v-if="app.status === 'submitted' && isAdmin" @click="reviewApp(app.id)" class="text-green-600 hover:text-green-800 text-sm">审核</button>
+                    <button v-if="app.status === 'submitted' && !app.workflow_definition_id && isAdmin" @click="reviewApp(app.id)" class="text-green-600 hover:text-green-800 text-sm">审核</button>
+                    <a v-if="app.status === 'submitted' && app.workflow_definition_id && isAdmin" href="/approvals" class="text-blue-600 hover:text-blue-800 text-sm">去审批→</a>
                 </td>
             </tr>
             <tr v-if="!applications || applications.length === 0">
@@ -203,7 +231,8 @@
                              'bg-green-50 border-green-200': node.status === 'completed' && node.action === 'approve',
                              'bg-red-50 border-red-200': node.status === 'completed' && node.action === 'reject',
                              'bg-blue-50 border-blue-200': node.type === 'start' || node.type === 'submit',
-                             'bg-gray-50': node.status === 'pending'
+                             'bg-yellow-50 border-yellow-200': node.status === 'pending' && node.pending_role,
+                             'bg-gray-50': node.status === 'pending' && !node.pending_role
                          }">
                         <div class="flex items-start justify-between">
                             <div class="flex items-center">
@@ -212,7 +241,8 @@
                                          'bg-green-500 text-white': node.status === 'completed' && node.action === 'approve',
                                          'bg-red-500 text-white': node.status === 'completed' && node.action === 'reject',
                                          'bg-blue-500 text-white': node.type === 'start' || node.type === 'submit',
-                                         'bg-gray-300 text-gray-500': node.status === 'pending'
+                                         'bg-yellow-500 text-white': node.status === 'pending' && node.pending_role,
+                                         'bg-gray-300 text-gray-500': node.status === 'pending' && !node.pending_role
                                      }">
                                     <i :class="getStepIconClass(node.type, node.action)"></i>
                                 </div>
@@ -222,6 +252,18 @@
                                         <span v-if="node.actor_name">{{ node.actor_name }}</span>
                                         <span v-if="node.created_at">{{ formatDate(node.created_at) }}</span>
                                     </p>
+                                    <!-- 待处理角色和人员 -->
+                                    <div v-if="node.status === 'pending' && node.pending_role" class="mt-2">
+                                        <p class="text-xs text-yellow-700 font-medium">
+                                            <i class="fas fa-user-clock mr-1"></i>待处理角色：{{ node.pending_role }}
+                                        </p>
+                                        <p class="text-xs text-yellow-600 mt-1" v-if="node.pending_users && node.pending_users.length > 0">
+                                            <i class="fas fa-users mr-1"></i>待审核人员：{{ node.pending_users.join('、') }}
+                                        </p>
+                                        <p class="text-xs text-yellow-600 mt-1" v-else-if="node.pending_users && node.pending_users.length === 0">
+                                            <i class="fas fa-exclamation-triangle mr-1"></i>暂无该角色的审核人员
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                             <div>
@@ -231,7 +273,10 @@
                                 <span v-if="node.status === 'completed' && node.action === 'reject'" class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-600">
                                     <i class="fas fa-times-circle mr-1"></i>已拒绝
                                 </span>
-                                <span v-if="node.status === 'pending'" class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                <span v-if="node.status === 'pending' && node.pending_role" class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-600">
+                                    <i class="far fa-clock mr-1"></i>待处理
+                                </span>
+                                <span v-if="node.status === 'pending' && !node.pending_role" class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
                                     <i class="far fa-clock mr-1"></i>待处理
                                 </span>
                                 <span v-if="node.type === 'start' || node.type === 'submit'" class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-600">
@@ -271,12 +316,15 @@ createApp({
         return {
             applications: [],
             workflows: [],
+            filterTab: 'all',  // all, mine, reviewed
             filterStatus: '',
+            filterDepartment: '',
             searchKeyword: '',
             showCreateModal: false,
             showViewModal: false,
             isAdmin: false,
             viewData: {},
+            searchTimer: null,
             newApp: {
                 title: '',
                 department: '',
@@ -295,10 +343,12 @@ createApp({
             if (!this.applications || !Array.isArray(this.applications)) {
                 return [];
             }
+            // 后端已过滤，这里只做关键词搜索
+            if (!this.searchKeyword) {
+                return this.applications;
+            }
             return this.applications.filter(app => {
-                const matchStatus = !this.filterStatus || app.status === this.filterStatus;
-                const matchKeyword = !this.searchKeyword || app.title.toLowerCase().includes(this.searchKeyword.toLowerCase());
-                return matchStatus && matchKeyword;
+                return app.title.toLowerCase().includes(this.searchKeyword.toLowerCase());
             });
         }
     },
@@ -316,11 +366,33 @@ createApp({
                 });
         },
         loadApplications() {
-            fetch('/api/applications/')
-                .then(res => res.json())
-                .then(data => {
-                    this.applications = data;
-                });
+            // 构建查询参数
+            const params = new URLSearchParams();
+            if (this.filterStatus) params.append('status', this.filterStatus);
+            if (this.filterDepartment) params.append('department', this.filterDepartment);
+
+            // 根据选项卡设置创建人/审批人过滤
+            if (this.filterTab === 'mine') {
+                params.append('creator', 'me');
+            } else if (this.filterTab === 'reviewed') {
+                params.append('reviewer_id_filter', 'me');
+            }
+
+            const url = `/api/applications/?${params.toString()}`;
+            fetch(url, {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+            })
+            .then(res => res.json())
+            .then(data => {
+                this.applications = data;
+            });
+        },
+        debounceSearch() {
+            // 防抖搜索，避免频繁请求
+            if (this.searchTimer) clearTimeout(this.searchTimer);
+            this.searchTimer = setTimeout(() => {
+                this.searchTimer = null;
+            }, 300);
         },
         checkAdmin() {
             fetch('/api/auth/me', {
