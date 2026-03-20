@@ -14,6 +14,19 @@ from app.api.auth import get_current_user
 router = APIRouter()
 
 
+@router.get("/my")
+def list_my_applications(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取当前用户的应用场景列表"""
+    query = db.query(Application).filter(Application.applicant_id == current_user.id)
+    applications = query.order_by(Application.created_at.desc()).offset(skip).limit(limit).all()
+    return {"items": applications, "total": len(applications)}
+
+
 @router.get("/", response_model=List[ApplicationResponse])
 def list_applications(
     skip: int = 0,

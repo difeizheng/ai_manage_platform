@@ -22,6 +22,7 @@ class User(Base):
     phone = Column(String(20))
     department = Column(String(100))  # 所属部门
     role = Column(String(20), default="user")  # user, reviewer, admin
+    is_department_manager = Column(Boolean, default=False)  # 是否部门负责人
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -269,6 +270,26 @@ class ForumPost(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class ForumComment(Base):
+    """论坛评论"""
+    __tablename__ = "forum_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("forum_posts.id"), nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("forum_comments.id"), nullable=True)  # 回复的评论 ID
+    content = Column(Text, nullable=False)
+    like_count = Column(Integer, default=0)
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    post = relationship("ForumPost", backref="comments")
+    author = relationship("User", foreign_keys=[author_id])
+    parent = relationship("ForumComment", remote_side=[id], backref="replies")
+
+
 # ============ 申请记录 ============
 class ApplicationRequest(Base):
     """资源申请记录（数据/模型/智能体/算力）"""
@@ -284,7 +305,9 @@ class ApplicationRequest(Base):
     expected_duration = Column(Integer)  # 预计使用天数
     expected_frequency = Column(String(100))  # 预计调用频率
     related_application = Column(String(200))  # 关联应用场景
-    status = Column(String(20), default="pending")  # pending, approved, rejected
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"))  # 绑定的工作流定义
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"))  # 关联的工作流记录
+    status = Column(String(20), default="pending")  # pending, approved, rejected, under_review
     reviewer_id = Column(Integer, ForeignKey("users.id"))
     review_comments = Column(Text)
     approved_at = Column(DateTime(timezone=True))

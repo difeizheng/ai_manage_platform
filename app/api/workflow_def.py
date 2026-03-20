@@ -2,10 +2,11 @@
 工作流定义 API - 支持自定义工作流审核流程
 """
 from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-import json
+from sqlalchemy.inspection import inspect
 
 from app.core.database import get_db
 from app.models.models import WorkflowDefinition, WorkflowRecord, Application, User, Role, UserRole, Notification
@@ -43,6 +44,60 @@ def list_definitions(
         query = query.filter(WorkflowDefinition.is_active == True)
     definitions = query.order_by(WorkflowDefinition.created_at.desc()).all()
     return definitions
+
+
+@router.get("/approvals/my")
+def get_my_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取当前用户的待办审批列表
+    返回工作流记录、定义和当前节点的详细信息
+    """
+    from app.models.models import Notification
+
+    # 查找发送给当前用户的通知
+    notifications = db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+        Notification.type == "workflow"
+    ).all()
+
+    result = []
+    seen_records = set()
+
+    for notif in notifications:
+        if notif.related_type != "workflow_record" or not notif.related_id:
+            continue
+
+        record = db.query(WorkflowRecord).filter(WorkflowRecord.id == notif.related_id).first()
+        if not record or not record.workflow_definition_id:
+            continue
+
+        if record.id in seen_records:
+            continue
+        seen_records.add(record.id)
+
+        definition = db.query(WorkflowDefinition).filter(WorkflowDefinition.id == record.workflow_definition_id).first()
+        if not definition:
+            continue
+
+        # 获取当前节点信息
+        nodes = definition.nodes or []
+        current_node = next((n for n in nodes if n.get('id') == record.current_node_id), None)
+
+        # 获取提交人信息
+        actor = db.query(User).filter(User.id == record.actor_id).first()
+
+        result.append({
+            "record": record,
+            "definition": definition,
+            "currentNode": current_node,
+            "actor": actor
+        })
+
+    return result
 
 
 @router.get("/{definition_id}")
@@ -84,13 +139,9 @@ async def create_definition(
 
 
 @router.put("/{definition_id}")
-def update_definition(
+async def update_definition(
     definition_id: int,
-    name: str = None,
-    description: str = None,
-    nodes: list = None,
-    edges: list = None,
-    is_active: bool = None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -98,24 +149,40 @@ def update_definition(
     if current_user.role not in ['admin', 'reviewer']:
         raise HTTPException(status_code=403, detail="权限不足")
 
+    data = await request.json()
     definition = db.query(WorkflowDefinition).filter(WorkflowDefinition.id == definition_id).first()
     if not definition:
         raise HTTPException(status_code=404, detail="工作流定义不存在")
 
-    if name is not None:
-        definition.name = name
-    if description is not None:
-        definition.description = description
-    if nodes is not None:
-        definition.nodes = nodes
-    if edges is not None:
-        definition.edges = edges
-    if is_active is not None:
-        definition.is_active = is_active
+    # 更新字段
+    if 'name' in data:
+        definition.name = data.get('name')
+    if 'description' in data:
+        definition.description = data.get('description')
+    if 'nodes' in data:
+        definition.nodes = data.get('nodes')
+    if 'edges' in data:
+        definition.edges = data.get('edges')
+    if 'is_active' in data:
+        definition.is_active = data.get('is_active')
 
     db.commit()
     db.refresh(definition)
-    return definition
+
+    # 手动构建响应字典，处理 datetime 类型
+    mapper = inspect(definition)
+    result = {}
+    for column in mapper.columns:
+        key = column.key
+        value = getattr(definition, key)
+        if isinstance(value, datetime):
+            result[key] = value.isoformat() if value else None
+        elif value is None:
+            result[key] = None
+        else:
+            result[key] = value
+
+    return JSONResponse(content=result)
 
 
 @router.delete("/{definition_id}")
@@ -284,14 +351,29 @@ async def start_workflow(
     # 获取审核人列表并创建通知
     approvers = []
     if next_node and next_node.get('type') in ['review', 'approve']:
-        approvers = get_approver_users(next_node.get('config', {}), db, current_user)
+        # 更新当前流程记录的节点为下一个审核节点
+        workflow_record.current_node_id = next_node.get('id')
+
+        # 获取申请信息用于部门负责人逻辑
+        app = None
+        if application_id:
+            app = db.query(Application).filter(Application.id == application_id).first()
+
+        approvers = get_approver_users(next_node.get('config', {}), db, current_user, app)
+
+        # 获取申请信息用于通知内容
+        app_info = ""
+        if application_id:
+            app = db.query(Application).filter(Application.id == application_id).first()
+            if app:
+                app_info = f"\n申请名称：{app.title}\n申报部门：{app.department or '未分配'}"
 
         # 为每个审核人创建站内通知
         for approver in approvers:
             notification = Notification(
                 user_id=approver.id,
-                title=f"待办审批：{definition.name}",
-                content=f"您有一个待审批的流程节点：{next_node.get('name')}\n提交人：{current_user.real_name or current_user.username}\n提交时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                title=f"待办审批：{definition.name} - {next_node.get('name')}",
+                content=f"您有一个待审批的流程节点：{next_node.get('name')}\n提交人：{current_user.real_name or current_user.username}{app_info}\n提交时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
                 type="workflow",
                 related_type="workflow_record",
                 related_id=workflow_record.id
@@ -390,8 +472,15 @@ async def perform_action(
             if edge.get('source') == workflow_record.current_node_id and edge.get('condition') == 'reject':
                 next_node = next((n for n in nodes if n.get('id') == edge.get('target')), None)
                 break
-        # 如果没有拒绝路径，流程结束
+        # 如果没有拒绝路径，流程结束，更新应用状态为拒绝
         if not next_node:
+            # 更新应用状态
+            if workflow_record.application_id:
+                app = db.query(Application).filter(Application.id == workflow_record.application_id).first()
+                if app:
+                    app.status = "rejected"
+                    app.review_comments = comments
+                    app.reviewer_id = current_user.id
             db.commit()
             return {"message": "已拒绝，流程结束", "next_node": None}
     else:
@@ -405,17 +494,39 @@ async def perform_action(
 
         # 如果下一个节点是审核节点，通知审核人
         if next_node.get('type') in ['review', 'approve']:
-            approvers = get_approver_users(next_node.get('config', {}), db)
+            # 获取申请信息用于部门负责人逻辑
+            app = None
+            if workflow_record.application_id:
+                app = db.query(Application).filter(Application.id == workflow_record.application_id).first()
+
+            approvers = get_approver_users(next_node.get('config', {}), db, current_user, app)
+
+            # 获取申请信息用于通知内容
+            app_info = ""
+            if workflow_record.application_id:
+                app = db.query(Application).filter(Application.id == workflow_record.application_id).first()
+                if app:
+                    app_info = f"\n申请名称：{app.title}\n申报部门：{app.department or '未分配'}"
+
             for approver in approvers:
                 notification = Notification(
                     user_id=approver.id,
-                    title=f"待办审批：{definition.name}",
-                    content=f"您有一个待审批的流程节点：{next_node.get('name')}\n提交人：{current_user.real_name or current_user.username}\n提交时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    title=f"待办审批：{definition.name} - {next_node.get('name')}",
+                    content=f"您有一个待审批的流程节点：{next_node.get('name')}\n提交人：{current_user.real_name or current_user.username}{app_info}\n审批意见：{comments if comments else '无'}\n操作时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
                     type="workflow",
                     related_type="workflow_record",
                     related_id=workflow_record.id
                 )
                 db.add(notification)
+    else:
+        # 没有下一个节点，流程完成，更新应用状态为通过
+        if workflow_record.application_id:
+            app = db.query(Application).filter(Application.id == workflow_record.application_id).first()
+            if app:
+                app.status = "approved"
+                app.review_comments = comments
+                app.reviewer_id = current_user.id
+                app.approved_at = datetime.now()
 
     db.commit()
 
@@ -425,22 +536,73 @@ async def perform_action(
     }
 
 
-def get_approver_users(node_config, db, current_user=None):
+def get_approver_users(node_config, db, current_user=None, application=None):
     """
     根据节点配置获取审核人用户列表
     node_config: 节点配置，包含 approver (角色 code) 字段
+    current_user: 当前用户（用于部门负责人逻辑）
+    application: 应用场景（用于申请部门负责人逻辑）
     """
     approver = node_config.get('approver')
     if not approver:
         return []
 
-    # 特殊处理：部门负责人、申请部门负责人（需要根据实际业务逻辑处理）
+    # 特殊处理：部门负责人（查找当前用户所在部门的负责人）
     if approver == 'department_head':
-        #  TODO: 根据当前用户的部门查找部门负责人
-        # 这里暂时返回空，需要业务层进一步处理
+        if not current_user or not current_user.department:
+            return []
+        # 查找当前用户所在部门的部门负责人
+        dept_managers = db.query(User).filter(
+            User.department == current_user.department,
+            User.is_department_manager == True,
+            User.is_active == True
+        ).all()
+        if dept_managers:
+            return dept_managers
+        # 如果没有明确标记的部门负责人，查找部门经理角色
+        manager_role = db.query(Role).filter(Role.code == 'department_manager').first()
+        if manager_role:
+            user_roles = db.query(UserRole).filter(UserRole.role_id == manager_role.id).all()
+            user_ids = [ur.user_id for ur in user_roles]
+            users = db.query(User).filter(
+                User.id.in_(user_ids),
+                User.department == current_user.department,
+                User.is_active == True
+            ).all()
+            return users if users else []
         return []
+
+    # 特殊处理：申请部门负责人（查找申请人所在部门的负责人）
     elif approver == 'applicant_department':
-        # TODO: 根据申请部门查找该部门的负责人
+        if not application:
+            # 尝试从 current_user 获取部门
+            if current_user and current_user.department:
+                dept = current_user.department
+            else:
+                return []
+        else:
+            dept = application.department if application.department else current_user.department if current_user else None
+        if not dept:
+            return []
+        # 查找申请部门的部门负责人
+        dept_managers = db.query(User).filter(
+            User.department == dept,
+            User.is_department_manager == True,
+            User.is_active == True
+        ).all()
+        if dept_managers:
+            return dept_managers
+        # 如果没有明确标记的部门负责人，查找部门经理角色
+        manager_role = db.query(Role).filter(Role.code == 'department_manager').first()
+        if manager_role:
+            user_roles = db.query(UserRole).filter(UserRole.role_id == manager_role.id).all()
+            user_ids = [ur.user_id for ur in user_roles]
+            users = db.query(User).filter(
+                User.id.in_(user_ids),
+                User.department == dept,
+                User.is_active == True
+            ).all()
+            return users if users else []
         return []
 
     # 根据角色 code 查找用户

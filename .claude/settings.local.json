@@ -62,7 +62,31 @@
       "Bash(kill:*)",
       "Bash(pip show:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(pkill:*)",
+      "Bash(powershell -Command \"Stop-Process -Id 24784,21496,31120 -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Id 24784,21496 -Force\")",
+      "Bash(findstr 24784)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Process { Stop-Process -Id $_-Force }\")",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_OwningProcess -Force -ErrorAction SilentlyContinue }\")",
+      "Bash(powershell -Command \"$conns = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue; foreach\\($conn in $conns\\) { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue }\")",
+      "Bash(token=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyZXZpZXdlcjEiLCJleHAiOjE3NzQ1MDAwNjV9.39aX6Ir4qA38KSA7zij5q6JKe0z5WKbrE69uwLvPkJ4\" curl -s \"http://localhost:8000/api/workflow-def/my-approvals\" -H \"Authorization: Bearer $token\")",
+      "Bash(/dev/null sleep:*)",
+      "Bash(powershell -Command \"taskkill /F /PID 36100\")",
+      "Bash(Stop-Process -Id 36100 -Force)",
+      "Bash(/dev/null taskkill:*)",
+      "Bash(findstr :9000)",
+      "Bash(powershell -Command \"Get-Process | Where-Object {$_.ProcessName -eq 'python'} | Select-Object Id,ProcessName\")",
+      "Bash(findstr python:*)",
+      "Bash(dir appapi__pycache__)",
+      "Bash(findstr applications:*)",
+      "Bash(powershell -Command \"taskkill /IM python.exe /F\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc3NDU0Mjk3OH0.c5UKUInF3DU2QfCQ-dtPxL-DhvX4Qx9htXxLTBAXi2A\")"
     ]
   }
 }

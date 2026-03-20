@@ -25,11 +25,14 @@
             <option value="news">行业资讯</option>
         </select>
         <input type="text" v-model="searchKeyword" placeholder="搜索帖子标题..." class="border border-gray-300 rounded-lg px-4 py-2 flex-1">
+        <button @click="loadPosts" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <i class="fas fa-search mr-1"></i>搜索
+        </button>
     </div>
 </div>
 
 <!-- 帖子列表 -->
-<div class="space-y-4">
+<div v-if="!showPostDetail" class="space-y-4">
     <div v-for="post in filteredPosts" :key="post.id" class="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all">
         <div class="flex items-start justify-between">
             <div class="flex-1">
@@ -57,48 +60,79 @@
     </div>
 </div>
 
-<!-- 发帖模态框 -->
-<div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-            <h3 class="text-lg font-semibold">发布新帖子</h3>
-            <button @click="showCreateModal = false" class="text-gray-400 hover:text-gray-600">
-                <i class="fas fa-times"></i>
-            </button>
+<!-- 帖子详情 -->
+<div v-if="showPostDetail && currentPost" class="bg-white rounded-xl shadow-sm">
+    <div class="p-6 border-b border-gray-200">
+        <button @click="showPostDetail = false; currentPost = null;" class="text-gray-600 hover:text-gray-800 mb-4">
+            <i class="fas fa-arrow-left mr-2"></i>返回列表
+        </button>
+        <div class="flex items-center gap-2 mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">{{ currentPost.title }}</h2>
+            <span v-if="currentPost.is_pinned" class="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded">置顶</span>
+            <span :class="getCategoryClass(currentPost.category)" class="px-2 py-0.5 text-xs rounded">
+                {{ getCategoryText(currentPost.category) }}
+            </span>
         </div>
-        <div class="p-6 space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
-                <input v-model="newPost.title" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入标题">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">分类</label>
-                <select v-model="newPost.category" class="w-full border border-gray-300 rounded-lg px-4 py-2">
-                    <option value="">请选择</option>
-                    <option value="tech">技术分享</option>
-                    <option value="case">案例分析</option>
-                    <option value="qa">问答交流</option>
-                    <option value="news">行业资讯</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">内容 *</label>
-                <textarea v-model="newPost.content" rows="8" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="请输入内容"></textarea>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">标签（用逗号分隔）</label>
-                <input v-model="newPost.tagsStr" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="例如：AI, NLP, 机器学习">
+        <div class="flex items-center gap-4 text-sm text-gray-500">
+            <span><i class="fas fa-user mr-1"></i>作者：{{ getAuthorName(currentPost.author_id) }}</span>
+            <span><i class="fas fa-eye mr-1"></i>浏览：{{ currentPost.view_count }}</span>
+            <span><i class="fas fa-heart mr-1"></i>点赞：{{ currentPost.like_count }}</span>
+            <span><i class="fas fa-comment mr-1"></i>评论：{{ currentPost.comment_count }}</span>
+            <span><i class="fas fa-clock mr-1"></i>{{ formatDate(currentPost.created_at) }}</span>
+        </div>
+    </div>
+    <div class="p-6">
+        <div class="prose max-w-none mb-6">
+            <p class="text-gray-700 whitespace-pre-line">{{ currentPost.content }}</p>
+        </div>
+        <div v-if="currentPost.tags && currentPost.tags.length > 0" class="flex flex-wrap gap-2 mb-6">
+            <span v-for="tag in currentPost.tags" :key="tag" class="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded">
+                #{{ tag }}
+            </span>
+        </div>
+    </div>
+
+    <!-- 评论区 -->
+    <div class="p-6 border-t border-gray-200">
+        <h3 class="text-lg font-semibold mb-4">评论 ({{ comments.length }})</h3>
+
+        <!-- 发表评论 -->
+        <div class="mb-6">
+            <textarea v-model="newComment" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="写下你的评论..."></textarea>
+            <div class="mt-2 text-right">
+                <button @click="submitComment" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    发表评论
+                </button>
             </div>
         </div>
-        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
-            <button @click="showCreateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
-            <button @click="submitPost" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">发布</button>
+
+        <!-- 评论列表 -->
+        <div class="space-y-4">
+            <div v-for="comment in comments" :key="comment.id" class="border-b border-gray-100 pb-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                        <p class="text-gray-700">{{ comment.content }}</p>
+                        <div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                            <span><i class="fas fa-user mr-1"></i>{{ getCommentAuthorName(comment.author_id) }}</span>
+                            <span><i class="fas fa-clock mr-1"></i>{{ formatDate(comment.created_at) }}</span>
+                        </div>
+                    </div>
+                    <button v-if="canDeleteComment(comment)" @click="deleteComment(comment.id)" class="text-gray-400 hover:text-red-600 ml-2">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div v-if="comments.length === 0" class="text-center text-gray-400 py-8">
+                暂无评论，快来抢沙发吧！
+            </div>
         </div>
     </div>
 </div>
 {% endraw %}
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
 const { createApp } = Vue;
 
@@ -109,12 +143,17 @@ createApp({
             filterCategory: '',
             searchKeyword: '',
             showCreateModal: false,
+            showPostDetail: false,
+            currentPost: null,
+            comments: [],
+            newComment: '',
             newPost: {
                 title: '',
                 content: '',
                 category: '',
                 tagsStr: ''
-            }
+            },
+            currentUser: null
         }
     },
     computed: {
@@ -130,11 +169,24 @@ createApp({
         }
     },
     mounted() {
+        this.loadCurrentUser();
         this.loadPosts();
     },
     methods: {
+        async loadCurrentUser() {
+            try {
+                const user = await apiRequest('/api/auth/me');
+                this.currentUser = user;
+            } catch (e) {
+                this.currentUser = null;
+            }
+        },
         loadPosts() {
-            fetch('/api/forum/')
+            let url = '/api/forum/?limit=100';
+            if (this.filterCategory) {
+                url += '&category=' + this.filterCategory;
+            }
+            fetch(url)
                 .then(res => res.json())
                 .then(data => {
                     this.posts = data;
@@ -169,21 +221,97 @@ createApp({
             if (diff < 604800) return Math.floor(diff / 86400) + '天前';
             return date.toLocaleDateString('zh-CN');
         },
-        viewDetail(id) {
-            fetch(`/api/forum/${id}`)
+        async viewDetail(id) {
+            try {
+                const post = await apiRequest('/api/forum/' + id);
+                this.currentPost = post;
+                this.showPostDetail = true;
+                this.loadComments(id);
+            } catch (err) {
+                showError('加载帖子失败');
+            }
+        },
+        loadComments(postId) {
+            fetch('/api/forum/' + postId + '/comments')
                 .then(res => res.json())
-                .then(post => {
-                    alert(`帖子详情:\n标题：${post.title}\n内容：${post.content.substring(0, 200)}...\n分类：${post.category || '未分类'}\n浏览：${post.view_count}\n点赞：${post.like_count}\n评论：${post.comment_count}`);
+                .then(data => {
+                    this.comments = data;
                 });
         },
-        submitPost() {
-            if (!this.newPost.title || !this.newPost.content) {
-                alert('请输入标题和内容');
+        async submitComment() {
+            if (!this.newComment || !this.newComment.trim()) {
+                showError('请输入评论内容');
                 return;
             }
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/forum/' + this.currentPost.id + '/comments?content=' + encodeURIComponent(this.newComment), {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                if (response.ok) {
+                    showSuccess('评论成功');
+                    this.newComment = '';
+                    this.loadComments(this.currentPost.id);
+                    // 更新评论数
+                    this.currentPost.comment_count++;
+                } else {
+                    const data = await response.json();
+                    showError(data.detail || '评论失败');
+                }
+            } catch (err) {
+                showError('评论失败');
+            }
+        },
+        async deleteComment(commentId) {
+            if (!await showConfirm('确定删除该评论吗？')) return;
+
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch('/api/forum/comments/' + commentId, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                if (response.ok) {
+                    showSuccess('删除成功');
+                    this.loadComments(this.currentPost.id);
+                    this.currentPost.comment_count--;
+                } else {
+                    const data = await response.json();
+                    showError(data.detail || '删除失败');
+                }
+            } catch (err) {
+                showError('删除失败');
+            }
+        },
+        canDeleteComment(comment) {
+            if (!this.currentUser) return false;
+            return this.currentUser.role === 'admin' || comment.author_id === this.currentUser.id;
+        },
+        getAuthorName(authorId) {
+            // 简单处理，实际应该从后端获取用户信息
+            return '用户' + authorId;
+        },
+        getCommentAuthorName(authorId) {
+            return '用户' + authorId;
+        },
+        submitPost() {
+            if (!this.newPost.title || !this.newPost.content) {
+                showError('请输入标题和内容');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                showError('请先登录');
                 return;
             }
 
@@ -207,12 +335,12 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('发帖成功');
+                showSuccess('发帖成功');
                 this.showCreateModal = false;
                 this.newPost = { title: '', content: '', category: '', tagsStr: '' };
                 this.loadPosts();
             })
-            .catch(err => alert('发帖失败'));
+            .catch(err => showError('发帖失败'));
         }
     }
 }).mount('#app');

@@ -36,7 +36,12 @@
         <tbody class="divide-y divide-gray-200">
             <tr v-for="wf in workflows" :key="wf.id" class="hover:bg-gray-50">
                 <td class="px-6 py-4">
-                    <p class="font-medium text-gray-800">{{ wf.name }}</p>
+                    <div class="flex items-center gap-2">
+                        <p class="font-medium text-gray-800">{{ wf.name }}</p>
+                        <button @click="openEditNameModal(wf)" class="text-gray-400 hover:text-blue-600" title="修改名称">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                    </div>
                     <p class="text-xs text-gray-500">{{ wf.description || '无描述' }}</p>
                 </td>
                 <td class="px-6 py-4">
@@ -186,6 +191,35 @@
         <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
             <button @click="showDuplicateModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
             <button @click="confirmDuplicate" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存为新工作流</button>
+        </div>
+    </div>
+</div>
+
+<!-- 修改名称模态框 -->
+<div v-if="showEditNameModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-md">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">修改工作流名称</h3>
+            <button @click="showEditNameModal = false" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div class="bg-gray-50 p-3 rounded-lg">
+                <p class="text-sm text-gray-600">工作流 ID: <span class="font-medium text-gray-800">{{ editingWorkflow?.id }}</span></p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">新名称 *</label>
+                <input v-model="editNameForm.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="输入新名称">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="editNameForm.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2"></textarea>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="showEditNameModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="confirmEditName" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存</button>
         </div>
     </div>
 </div>
@@ -564,10 +598,13 @@ createApp({
             showNodeConfig: false,
             showDuplicateModal: false,
             showPreviewModal: false,
+            showEditNameModal: false,
             currentWorkflow: null,
             duplicatingWorkflow: null,
             previewingTemplate: null,
             previewNodes: [],
+            editingWorkflow: null,
+            editNameForm: { name: '', description: '' },
             newWorkflow: {
                 name: '',
                 description: '',
@@ -784,6 +821,50 @@ createApp({
             })
             .catch(err => alert('保存失败：' + (err.message || '未知错误')));
         },
+        openEditNameModal(wf) {
+            this.editingWorkflow = wf;
+            this.editNameForm = {
+                name: wf.name,
+                description: wf.description || ''
+            };
+            this.showEditNameModal = true;
+        },
+        confirmEditName() {
+            if (!this.editNameForm.name) {
+                alert('请填写工作流名称');
+                return;
+            }
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('请先登录');
+                return;
+            }
+            fetch(`/api/workflow-def/${this.editingWorkflow.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: this.editNameForm.name,
+                    description: this.editNameForm.description
+                })
+            })
+            .then(res => {
+                if (res.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    return;
+                }
+                if (res.ok) {
+                    alert('修改成功');
+                    this.showEditNameModal = false;
+                    this.loadWorkflows();
+                } else {
+                    alert('修改失败');
+                }
+            })
+            .catch(err => alert('修改失败：' + (err.message || '未知错误')));
+        },
         editWorkflow(wf) {
             this.currentWorkflow = wf;
             this.nodes = JSON.parse(JSON.stringify(wf.nodes || []));
@@ -818,8 +899,13 @@ createApp({
                     alert('登录已过期，请重新登录');
                     return;
                 }
-                wf.is_active = !wf.is_active;
-            });
+                if (res.ok) {
+                    wf.is_active = !wf.is_active;
+                } else {
+                    alert('操作失败');
+                }
+            })
+            .catch(err => alert('操作失败：' + (err.message || '未知错误')));
         },
         deleteWorkflow(wf) {
             if (!confirm('确定删除此工作流？')) return;
@@ -837,8 +923,14 @@ createApp({
                     alert('登录已过期，请重新登录');
                     return;
                 }
-                this.loadWorkflows();
-            });
+                if (res.ok) {
+                    alert('删除成功');
+                    this.loadWorkflows();
+                } else {
+                    alert('删除失败');
+                }
+            })
+            .catch(err => alert('删除失败：' + (err.message || '未知错误')));
         },
         addNode(type) {
             const newId = 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -1066,26 +1158,30 @@ createApp({
                 alert('请先登录');
                 return;
             }
-            fetch(`/api/workflow-def/${this.currentWorkflow.id}?` + new URLSearchParams({
-                name: this.currentWorkflow.name,
-                nodes: JSON.stringify(this.nodes),
-                edges: JSON.stringify(this.edges)
-            }), {
+            fetch(`/api/workflow-def/${this.currentWorkflow.id}`, {
                 method: 'PUT',
-                headers: { 'Authorization': 'Bearer ' + token }
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: this.currentWorkflow.name,
+                    nodes: this.nodes,
+                    edges: this.edges
+                })
             })
             .then(res => {
                 if (res.status === 401) {
                     alert('登录已过期，请重新登录');
                     return;
                 }
-                return res.json();
-            })
-            .then(data => {
-                if (!data) return;
-                alert('保存成功');
-                this.showDesigner = false;
-                this.loadWorkflows();
+                if (res.ok) {
+                    alert('保存成功');
+                    this.showDesigner = false;
+                    this.loadWorkflows();
+                } else {
+                    alert('保存失败');
+                }
             })
             .catch(err => alert('保存失败：' + (err.message || '未知错误')));
         }

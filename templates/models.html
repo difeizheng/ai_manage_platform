@@ -148,15 +148,15 @@ createApp({
             fetch(`/api/models/${id}`)
                 .then(res => res.json())
                 .then(m => {
-                    alert(`模型详情:\n名称：${m.name}\n描述：${m.description || '无'}\n类型：${m.model_type || '未分类'}\n框架：${m.framework || '未指定'}\n版本：${m.version}`);
+                    showInfo(`模型详情:\n名称：${m.name}\n描述：${m.description || '无'}\n类型：${m.model_type || '未分类'}\n框架：${m.framework || '未指定'}\n版本：${m.version}`);
                 });
         },
-        requestAccess(id) {
-            const purpose = prompt('请输入使用目的：');
+        async requestAccess(id) {
+            const purpose = await showPrompt('请输入使用目的：', { title: '使用目的' });
             if (!purpose) return;
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch(`/api/models/${id}/request`, {
@@ -174,18 +174,18 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('申请已提交，等待审批');
+                showSuccess('申请已提交，等待审批');
             })
-            .catch(err => alert('申请失败'));
+            .catch(err => showError('申请失败'));
         },
-        submitModel() {
+        async submitModel() {
             if (!this.newModel.name) {
-                alert('请输入模型名称');
+                showError('请输入模型名称');
                 return;
             }
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             const formData = new FormData();
@@ -203,12 +203,12 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('模型上传成功');
+                showSuccess('模型上传成功');
                 this.showCreateModal = false;
                 this.newModel = { name: '', description: '', model_type: '', framework: '' };
                 this.loadModels();
             })
-            .catch(err => alert('上传失败'));
+            .catch(err => showError('上传失败'));
         }
     }
 }).mount('#app');

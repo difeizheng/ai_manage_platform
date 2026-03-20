@@ -99,3 +99,21 @@ async def workflow_design(request: Request):
 async def system(request: Request):
     """系统配置"""
     return templates.TemplateResponse("system.html", {"request": request})
+
+
+@app.get("/approvals")
+async def approvals(request: Request):
+    """我的待办审批"""
+    return templates.TemplateResponse("approvals.html", {"request": request})
+
+
+@app.get("/notifications")
+async def notifications(request: Request):
+    """站内通知"""
+    return templates.TemplateResponse("notifications.html", {"request": request})
+
+
+@app.get("/workbench")
+async def workbench(request: Request):
+    """个人工作台"""
+    return templates.TemplateResponse("workbench.html", {"request": request})

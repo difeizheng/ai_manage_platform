@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+
+{% block title %}个人工作台 - 人工智能管理平台{% endblock %}
+
+{% block page_title %}个人工作台{% endblock %}
+
+{% block content %}
+<div id="app" class="space-y-6">
+    <!-- 欢迎语 -->
+    <div class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+        <h2 class="text-2xl font-bold">早上好，{{ user_name }}！</h2>
+        <p class="text-gray-100 mt-1">今天也是充满活力的一天，祝您工作顺利！</p>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-xl shadow-sm p-6 cursor-pointer hover:shadow-md transition-shadow" @click="activeTab = 'my_applications'">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500">我的申请</p>
+                    <p class="text-2xl font-bold text-gray-800">{{ my_applications_count }}</p>
+                </div>
+                <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-file-alt text-blue-600"></i>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-6 cursor-pointer hover:shadow-md transition-shadow" @click="activeTab = 'my_approvals'">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500">我的待办</p>
+                    <p class="text-2xl font-bold text-orange-600">{{ my_approvals_count }}</p>
+                </div>
+                <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-tasks text-orange-600"></i>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-6 cursor-pointer hover:shadow-md transition-shadow" @click="activeTab = 'my_notifications'">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500">我的通知</p>
+                    <p class="text-2xl font-bold text-red-600">{{ unread_notifications_count }}</p>
+                </div>
+                <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-bell text-red-600"></i>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-6 cursor-pointer hover:shadow-md transition-shadow" @click="goToApplications">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500">应用场景</p>
+                    <p class="text-2xl font-bold text-purple-600">{{ applications_total }}</p>
+                </div>
+                <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-brain text-purple-600"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 选项卡切换 -->
+    <div class="bg-white rounded-xl shadow-sm">
+        <div class="flex border-b border-gray-200">
+            <button @click="activeTab = 'my_applications'"
+                    :class="activeTab === 'my_applications' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                    class="px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center">
+                <i class="fas fa-file-alt mr-2"></i>我的申请
+            </button>
+            <button @click="activeTab = 'my_approvals'"
+                    :class="activeTab === 'my_approvals' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                    class="px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center">
+                <i class="fas fa-tasks mr-2"></i>我的待办
+            </button>
+            <button @click="activeTab = 'my_notifications'"
+                    :class="activeTab === 'my_notifications' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                    class="px-6 py-4 text-sm font-medium border-b-2 transition-colors flex items-center">
+                <i class="fas fa-bell mr-2"></i>我的通知
+            </button>
+        </div>
+
+        <div class="p-6">
+            <!-- 我的申请 -->
+            <div v-if="activeTab === 'my_applications'" class="space-y-4">
+                <div v-if="myApplicationsLoading" class="text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                    <p class="mt-2 text-gray-500">加载中...</p>
+                </div>
+                <div v-else-if="myApplications.length === 0" class="text-center py-8">
+                    <i class="fas fa-inbox text-4xl text-gray-300"></i>
+                    <p class="mt-2 text-gray-500">暂无申请记录</p>
+                </div>
+                <div v-else class="space-y-3">
+                    <div v-for="app in myApplications" :key="app.id"
+                         class="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-900">{{ app.title }}</h4>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    <i class="fas fa-calendar mr-1"></i>{{ formatDate(app.created_at) }}
+                                    <span class="ml-4"><i class="fas fa-user mr-1"></i>{{ app.department || '未分配部门' }}</span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span :class="getStatusClass(app.status)" class="px-3 py-1 text-xs rounded-full">
+                                    {{ getStatusText(app.status) }}
+                                </span>
+                                <button @click="viewApplication(app.id)" class="text-blue-600 hover:text-blue-800 text-sm">
+                                    查看 <i class="fas fa-chevron-right ml-1"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 我的待办 -->
+            <div v-if="activeTab === 'my_approvals'" class="space-y-4">
+                <div v-if="myApprovalsLoading" class="text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                    <p class="mt-2 text-gray-500">加载中...</p>
+                </div>
+                <div v-else-if="myApprovals.length === 0" class="text-center py-8">
+                    <i class="fas fa-check-circle text-4xl text-green-500"></i>
+                    <p class="mt-2 text-gray-500">太棒了！所有待办已处理完毕</p>
+                </div>
+                <div v-else class="space-y-3">
+                    <div v-for="item in myApprovals" :key="item.record.id"
+                         class="border border-orange-200 rounded-lg p-4 bg-orange-50 hover:bg-orange-100 transition-colors">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">待审批</span>
+                                    <span class="text-sm text-gray-600">{{ item.definition?.name }}</span>
+                                </div>
+                                <h4 class="font-medium text-gray-900">{{ item.currentNode?.name }}</h4>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    <i class="fas fa-user mr-1"></i>提交人：{{ item.actor?.real_name || item.actor?.username }}
+                                    <span class="ml-4"><i class="fas fa-clock mr-1"></i>{{ formatTime(item.record.created_at) }}前</span>
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="handleApproval(item.record.id, item.definition.id)"
+                                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                                    处理
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 我的通知 -->
+            <div v-if="activeTab === 'my_notifications'" class="space-y-4">
+                <div v-if="myNotificationsLoading" class="text-center py-8">
+                    <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+                    <p class="mt-2 text-gray-500">加载中...</p>
+                </div>
+                <div v-else-if="myNotifications.length === 0" class="text-center py-8">
+                    <i class="fas fa-bell-slash text-4xl text-gray-300"></i>
+                    <p class="mt-2 text-gray-500">暂无通知</p>
+                </div>
+                <div v-else class="space-y-3">
+                    <div v-for="notif in myNotifications" :key="notif.id"
+                         class="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors"
+                         :class="!notif.is_read ? 'bg-blue-50 border-blue-200' : ''">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <i v-if="!notif.is_read" class="fas fa-circle text-xs text-blue-500"></i>
+                                    <span v-if="notif.type === 'workflow'" class="px-2 py-0.5 bg-purple-100 text-purple-600 text-xs rounded">工作流</span>
+                                    <span v-else-if="notif.type === 'system'" class="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">系统</span>
+                                    <h4 class="font-medium text-gray-900">{{ notif.title }}</h4>
+                                </div>
+                                <p class="text-sm text-gray-600">{{ notif.content }}</p>
+                                <p class="text-xs text-gray-400 mt-2">{{ formatTime(notif.created_at) }}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button v-if="!notif.is_read" @click="markNotificationAsRead(notif.id)"
+                                        class="text-blue-600 hover:text-blue-800 text-sm">标记已读</button>
+                                <button @click="deleteNotification(notif.id)"
+                                        class="text-gray-400 hover:text-red-600 text-sm">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷入口 -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="font-semibold text-gray-800 mb-4">快捷入口</h3>
+        <div class="grid grid-cols-3 md:grid-cols-6 gap-4">
+            <a href="/applications" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-file-alt text-blue-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">应用场景</span>
+            </a>
+            <a href="/workflow-design" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-sitemap text-purple-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">工作流设计</span>
+            </a>
+            <a href="/approvals" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-tasks text-orange-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">我的待办</span>
+            </a>
+            <a href="/notifications" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-bell text-red-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">站内通知</span>
+            </a>
+            <a href="/datasets" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-database text-green-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">数据集</span>
+            </a>
+            <a href="/models" class="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors">
+                <div class="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-2">
+                    <i class="fas fa-robot text-indigo-600"></i>
+                </div>
+                <span class="text-sm text-gray-700">模型管理</span>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    data() {
+        return {
+            activeTab: 'my_applications',
+            userName: '',
+            myApplications: [],
+            myApprovals: [],
+            myNotifications: [],
+            myApplicationsLoading: false,
+            myApprovalsLoading: false,
+            myNotificationsLoading: false,
+            my_applications_count: 0,
+            my_approvals_count: 0,
+            unread_notifications_count: 0,
+            applications_total: 0
+        }
+    },
+    mounted() {
+        this.loadUserData();
+        this.loadMyApplications();
+        this.loadMyApprovals();
+        this.loadMyNotifications();
+        this.loadStats();
+    },
+    methods: {
+        async loadUserData() {
+            try {
+                const user = await apiRequest('/auth/me');
+                this.userName = user.real_name || user.username || user.username;
+            } catch (err) {
+                console.error('加载用户信息失败:', err);
+                this.userName = '用户';
+            }
+        },
+        async loadMyApplications() {
+            this.myApplicationsLoading = true;
+            try {
+                const data = await apiRequest('/api/applications/my');
+                this.myApplications = data.items || data;
+                this.my_applications_count = this.myApplications.length;
+            } catch (err) {
+                console.error('加载我的申请失败:', err);
+            } finally {
+                this.myApplicationsLoading = false;
+            }
+        },
+        async loadMyApprovals() {
+            this.myApprovalsLoading = true;
+            try {
+                const data = await apiRequest('/api/workflow-def/approvals/my');
+                this.myApprovals = data || [];
+                this.my_approvals_count = this.myApprovals.length;
+            } catch (err) {
+                console.error('加载我的待办失败:', err);
+            } finally {
+                this.myApprovalsLoading = false;
+            }
+        },
+        async loadMyNotifications() {
+            this.myNotificationsLoading = true;
+            try {
+                const data = await apiRequest('/api/notification/my?limit=10');
+                this.myNotifications = data.items || [];
+            } catch (err) {
+                console.error('加载我的通知失败:', err);
+            } finally {
+                this.myNotificationsLoading = false;
+            }
+        },
+        async loadStats() {
+            try {
+                // 获取应用场景总数
+                const appData = await apiRequest('/api/applications?limit=1');
+                this.applications_total = appData.total || 0;
+
+                // 获取未读通知数
+                const notifData = await apiRequest('/api/notification/my/unread-count');
+                this.unread_notifications_count = notifData.unread_count;
+            } catch (err) {
+                console.error('加载统计失败:', err);
+            }
+        },
+        async markNotificationAsRead(id) {
+            try {
+                await apiRequest(`/api/notification/${id}/read`, { method: 'PUT' });
+                const notif = this.myNotifications.find(n => n.id === id);
+                if (notif) notif.is_read = true;
+                this.loadStats();
+                showSuccess('已标记为已读');
+            } catch (err) {
+                showError('操作失败');
+            }
+        },
+        async deleteNotification(id) {
+            if (!await showConfirm('确定删除该通知吗？')) return;
+            try {
+                await apiRequest(`/api/notification/${id}`, { method: 'DELETE' });
+                this.myNotifications = this.myNotifications.filter(n => n.id !== id);
+                this.loadStats();
+                showSuccess('删除成功');
+            } catch (err) {
+                showError('删除失败');
+            }
+        },
+        viewApplication(id) {
+            window.location.href = '/applications?id=' + id;
+        },
+        handleApproval(recordId, definitionId) {
+            // 跳转到我的待办页面并打开审批面板
+            window.location.href = '/approvals?record=' + recordId + '&definition=' + definitionId;
+        },
+        goToApplications() {
+            window.location.href = '/applications';
+        },
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('zh-CN');
+        },
+        formatTime(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟';
+            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时';
+            if (diff < 604800000) return Math.floor(diff / 86400000) + '天';
+            return date.toLocaleDateString('zh-CN');
+        },
+        getStatusClass(status) {
+            const classMap = {
+                'draft': 'bg-gray-100 text-gray-600',
+                'submitted': 'bg-blue-100 text-blue-600',
+                'under_review': 'bg-orange-100 text-orange-600',
+                'approved': 'bg-green-100 text-green-600',
+                'rejected': 'bg-red-100 text-red-600',
+                'in_progress': 'bg-purple-100 text-purple-600',
+                'completed': 'bg-green-100 text-green-600'
+            };
+            return classMap[status] || 'bg-gray-100 text-gray-600';
+        },
+        getStatusText(status) {
+            const textMap = {
+                'draft': '草稿',
+                'submitted': '已提交',
+                'under_review': '审核中',
+                'approved': '已通过',
+                'rejected': '已拒绝',
+                'in_progress': '进行中',
+                'completed': '已完成'
+            };
+            return textMap[status] || status;
+        }
+    }
+}).mount('#app');
+</script>
+{% endblock %}

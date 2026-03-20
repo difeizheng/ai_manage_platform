@@ -160,16 +160,16 @@ createApp({
             fetch(`/api/datasets/${id}`)
                 .then(res => res.json())
                 .then(ds => {
-                    alert(`数据集详情:\n名称：${ds.name}\n描述：${ds.description || '无'}\n业务领域：${ds.business_domain || '未分类'}\n数据类型：${ds.data_type || '未分类'}\n记录数：${ds.record_count || 0}`);
+                    showInfo(`数据集详情:\n名称：${ds.name}\n描述：${ds.description || '无'}\n业务领域：${ds.business_domain || '未分类'}\n数据类型：${ds.data_type || '未分类'}\n记录数：${ds.record_count || 0}`);
                 });
         },
-        requestAccess(id) {
-            const purpose = prompt('请输入使用目的：');
+        async requestAccess(id) {
+            const purpose = await showPrompt('请输入使用目的：', { title: '使用目的' });
             if (!purpose) return;
-            const duration = prompt('预计使用天数：', '30');
+            const duration = await showPrompt('预计使用天数：', { title: '使用天数', defaultValue: '30' });
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch(`/api/datasets/${id}/request`, {
@@ -188,18 +188,18 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('申请已提交，等待审批');
+                showSuccess('申请已提交，等待审批');
             })
-            .catch(err => alert('申请失败'));
+            .catch(err => showError('申请失败'));
         },
-        submitDataset() {
+        async submitDataset() {
             if (!this.newDataset.name) {
-                alert('请输入数据集名称');
+                showError('请输入数据集名称');
                 return;
             }
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch('/api/datasets/', {
@@ -212,12 +212,12 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('数据集上传成功');
+                showSuccess('数据集上传成功');
                 this.showCreateModal = false;
                 this.newDataset = { name: '', description: '', business_domain: '', data_type: '', record_count: 0 };
                 this.loadDatasets();
             })
-            .catch(err => alert('上传失败'));
+            .catch(err => showError('上传失败'));
         }
     }
 }).mount('#app');

@@ -88,7 +88,7 @@ createApp({
             fetch(`/api/app-store/${id}`)
                 .then(res => res.json())
                 .then(item => {
-                    alert(`应用详情:\n名称：${item.name}\n描述：${item.description || '无'}\n分类：${item.category || '通用'}\n开发者：${item.developer || '未知'}\n版本：${item.version}\n使用次数：${item.usage_count}`);
+                    showInfo(`应用详情:\n名称：${item.name}\n描述：${item.description || '无'}\n分类：${item.category || '通用'}\n开发者：${item.developer || '未知'}\n版本：${item.version}\n使用次数：${item.usage_count}`);
                 });
         }
     }

@@ -139,15 +139,15 @@ createApp({
             fetch(`/api/agents/${id}`)
                 .then(res => res.json())
                 .then(a => {
-                    alert(`智能体详情:\n名称：${a.name}\n描述：${a.description || '无'}\n类型：${a.agent_type || '未分类'}\n业务领域：${a.business_domain || '未分配'}`);
+                    showInfo(`智能体详情:\n名称：${a.name}\n描述：${a.description || '无'}\n类型：${a.agent_type || '未分类'}\n业务领域：${a.business_domain || '未分配'}`);
                 });
         },
-        requestAccess(id) {
-            const purpose = prompt('请输入使用目的：');
+        async requestAccess(id) {
+            const purpose = await showPrompt('请输入使用目的：', { title: '使用目的' });
             if (!purpose) return;
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch(`/api/agents/${id}/request`, {
@@ -165,18 +165,18 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('申请已提交，等待审批');
+                showSuccess('申请已提交，等待审批');
             })
-            .catch(err => alert('申请失败'));
+            .catch(err => showError('申请失败'));
         },
-        submitAgent() {
+        async submitAgent() {
             if (!this.newAgent.name) {
-                alert('请输入智能体名称');
+                showError('请输入智能体名称');
                 return;
             }
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch('/api/agents/', {
@@ -189,12 +189,12 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('智能体创建成功');
+                showSuccess('智能体创建成功');
                 this.showCreateModal = false;
                 this.newAgent = { name: '', description: '', agent_type: '', business_domain: '' };
                 this.loadAgents();
             })
-            .catch(err => alert('创建失败'));
+            .catch(err => showError('创建失败'));
         }
     }
 }).mount('#app');

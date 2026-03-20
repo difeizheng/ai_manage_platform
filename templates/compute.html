@@ -168,12 +168,12 @@ createApp({
             };
             return texts[status] || status;
         },
-        requestAccess(id) {
-            const purpose = prompt('请输入使用目的：');
+        async requestAccess(id) {
+            const purpose = await showPrompt('请输入使用目的：', { title: '使用目的' });
             if (!purpose) return;
             const token = localStorage.getItem('token');
             if (!token) {
-                alert('请先登录');
+                showError('请先登录');
                 return;
             }
             fetch(`/api/compute/${id}/request`, {
@@ -191,9 +191,9 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                alert('申请已提交，等待审批');
+                showSuccess('申请已提交，等待审批');
             })
-            .catch(err => alert('申请失败'));
+            .catch(err => showError('申请失败'));
         }
     }
 }).mount('#app');

@@ -460,3 +460,27 @@ class NotificationListResponse(BaseModel):
     items: List[NotificationResponse]
     total: int
     unread_count: int
+
+
+# ============ 论坛评论 ============
+class ForumCommentBase(BaseModel):
+    content: str
+    parent_id: Optional[int] = None
+
+
+class ForumCommentCreate(BaseModel):
+    content: str
+    parent_id: Optional[int] = None
+
+
+class ForumCommentResponse(ForumCommentBase):
+    id: int
+    post_id: int
+    author_id: int
+    like_count: int
+    is_deleted: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
