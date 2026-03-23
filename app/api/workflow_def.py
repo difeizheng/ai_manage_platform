@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy.inspection import inspect
 
 from app.core.database import get_db
-from app.models.models import WorkflowDefinition, WorkflowRecord, Application, User, Role, UserRole, Notification
+from app.models.models import WorkflowDefinition, WorkflowRecord, Application, User, Role, UserRole, Notification, Dataset, Model, Agent, AppStoreItem, ComputeResource
 from app.api.auth import get_current_user
 from app.schemas.schemas import WorkflowDefinitionCreate, WorkflowDefinitionResponse
 
@@ -55,9 +55,9 @@ def get_my_approvals(
     获取当前用户的待办审批列表
     返回工作流记录、定义和当前节点的详细信息
     """
-    from app.models.models import Notification
+    from app.models.models import Notification, Role, UserRole
 
-    # 查找发送给当前用户的通知
+    # 首先查找通过通知关联的待办（未读通知）
     notifications = db.query(Notification).filter(
         Notification.user_id == current_user.id,
         Notification.is_read == False,
@@ -67,6 +67,7 @@ def get_my_approvals(
     result = []
     seen_records = set()
 
+    # 处理通知关联的待办
     for notif in notifications:
         if notif.related_type != "workflow_record" or not notif.related_id:
             continue
@@ -83,11 +84,8 @@ def get_my_approvals(
         if not definition:
             continue
 
-        # 获取当前节点信息
         nodes = definition.nodes or []
         current_node = next((n for n in nodes if n.get('id') == record.current_node_id), None)
-
-        # 获取提交人信息
         actor = db.query(User).filter(User.id == record.actor_id).first()
 
         result.append({
@@ -96,6 +94,74 @@ def get_my_approvals(
             "currentNode": current_node,
             "actor": actor
         })
+
+    # 获取当前用户的所有角色
+    user_roles = db.query(UserRole).filter(UserRole.user_id == current_user.id).all()
+    role_ids = [ur.role_id for ur in user_roles]
+    role_codes = []
+    if role_ids:
+        roles = db.query(Role).filter(Role.id.in_(role_ids)).all()
+        role_codes = [r.code for r in roles]
+
+    # 查找所有处于审核/审批节点的工作流记录
+    # 根据节点配置中的 approver 角色匹配当前用户的角色
+    all_records = db.query(WorkflowRecord).join(
+        WorkflowDefinition,
+        WorkflowRecord.workflow_definition_id == WorkflowDefinition.id
+    ).filter(
+        WorkflowRecord.node_status == 'completed'
+    ).all()
+
+    for record in all_records:
+        if record.id in seen_records:
+            continue
+
+        definition = record.workflow_definition_rel if hasattr(record, 'workflow_definition_rel') else None
+        if not definition:
+            definition = db.query(WorkflowDefinition).filter(WorkflowDefinition.id == record.workflow_definition_id).first()
+        if not definition:
+            continue
+
+        nodes = definition.nodes or []
+        current_node = next((n for n in nodes if n.get('id') == record.current_node_id), None)
+        if not current_node:
+            continue
+
+        # 检查当前节点是否是审核/审批节点
+        if current_node.get('type') not in ['review', 'approve']:
+            continue
+
+        # 检查当前节点的 approver 是否包含当前用户
+        node_config = current_node.get('config', {})
+        approver = node_config.get('approver')
+
+        should_include = False
+
+        if approver == 'department_head':
+            # 部门负责人逻辑
+            if current_user.is_department_manager:
+                should_include = True
+        elif approver == 'applicant_department':
+            # 申请部门负责人逻辑 - 这里简化处理，只要是部门经理角色就包含
+            if 'department_manager' in role_codes:
+                should_include = True
+        elif approver:
+            # 根据角色 code 匹配
+            if approver in role_codes:
+                should_include = True
+        else:
+            # 没有配置 approver，默认包含
+            should_include = True
+
+        if should_include:
+            seen_records.add(record.id)
+            actor = db.query(User).filter(User.id == record.actor_id).first()
+            result.append({
+                "record": record,
+                "definition": definition,
+                "currentNode": current_node,
+                "actor": actor
+            })
 
     return result
 
@@ -527,6 +593,32 @@ async def perform_action(
                 app.review_comments = comments
                 app.reviewer_id = current_user.id
                 app.approved_at = datetime.now()
+
+        # 更新资源状态（如果是资源类型的工作流）
+        record_type = workflow_record.record_type
+        resource_id = workflow_record.record_id
+        if record_type and resource_id:
+            resource_models = {
+                'dataset': Dataset,
+                'model': Model,
+                'agent': Agent,
+                'app_store': AppStoreItem,
+                'compute_resource': ComputeResource
+            }
+            resource_model = resource_models.get(record_type)
+            if resource_model:
+                resource = db.query(resource_model).filter(resource_model.id == resource_id).first()
+                if resource:
+                    # 根据资源类型设置对应的通过状态
+                    approved_status_map = {
+                        'dataset': 'available',
+                        'model': 'available',
+                        'agent': 'available',
+                        'app_store': 'published',
+                        'compute_resource': 'available'
+                    }
+                    resource.status = approved_status_map.get(record_type, 'approved')
+                    db.commit()
 
     db.commit()
 

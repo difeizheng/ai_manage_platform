@@ -4,8 +4,8 @@
 
 {% block page_title %}个人工作台{% endblock %}
 
-{% block content %}
-<div id="app" class="space-y-6">
+{% block content %}{% raw %}
+<div id="app" class="space-y-6" v-cloak>
     <!-- 欢迎语 -->
     <div class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
         <h2 class="text-2xl font-bold">早上好，{{ user_name }}！</h2>
@@ -99,7 +99,7 @@
                                 <h4 class="font-medium text-gray-900">{{ app.title }}</h4>
                                 <p class="text-sm text-gray-500 mt-1">
                                     <i class="fas fa-calendar mr-1"></i>{{ formatDate(app.created_at) }}
-                                    <span class="ml-4"><i class="fas fa-user mr-1"></i>{{ app.department || '未分配部门' }}</span>
+                                    <span class="ml-4"><i class="fas fa-user mr-1"></i><span v-text="app.department || '未分配部门'"></span></span>
                                 </p>
                             </div>
                             <div class="flex items-center gap-2">
@@ -132,11 +132,11 @@
                             <div class="flex-1">
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">待审批</span>
-                                    <span class="text-sm text-gray-600">{{ item.definition?.name }}</span>
+                                    <span class="text-sm text-gray-600">{{ item.definition.name if item.definition else "" }}</span>
                                 </div>
-                                <h4 class="font-medium text-gray-900">{{ item.currentNode?.name }}</h4>
+                                <h4 class="font-medium text-gray-900">{{ item.currentNode.name if item.currentNode else "" }}</h4>
                                 <p class="text-sm text-gray-500 mt-1">
-                                    <i class="fas fa-user mr-1"></i>提交人：{{ item.actor?.real_name || item.actor?.username }}
+                                    <i class="fas fa-user mr-1"></i>提交人：<span v-text="item.actor?.real_name || item.actor?.username"></span>
                                     <span class="ml-4"><i class="fas fa-clock mr-1"></i>{{ formatTime(item.record.created_at) }}前</span>
                                 </p>
                             </div>
@@ -234,6 +234,7 @@
         </div>
     </div>
 </div>
+{% endraw %}
 {% endblock %}
 
 {% block extra_js %}

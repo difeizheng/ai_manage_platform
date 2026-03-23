@@ -1,21 +1,64 @@
 # AI 管理平台 - 项目状态
 
-**更新时间**: 2026-03-19
-**当前版本**: v1.1.0
+**更新时间**: 2026-03-23
+**当前版本**: v1.3.0
 **GitHub**: https://github.com/difeizheng/ai_manage_platform
 
 ---
 
-## 最新版本变更 (v1.1.0)
+## 最新版本变更 (v1.3.0)
 
 ### 新增功能
-- **应用场景详情查看** - 点击"查看"按钮弹出模态框展示完整信息
-- **审批流程可视化** - 显示每个审批节点的状态、审批人、审批意见
-- **工作流记录查询 API** - `/api/applications/{app_id}/workflow-records`
+- **个人工作台** (`/workbench`) - 用户个人首页，汇总我的申请/我的待办/我的通知
+- **站内通知页面** (`/notifications`) - 完整的通知管理功能
+- **论坛评论** - 支持发表评论、查看评论、删除评论
+- **资源申请工作流** - 资源申请可绑定工作流审批
+
+### 核心改进
+- **部门负责人审批逻辑** - 实现 `department_head` 和 `applicant_department` 审核人类型
+- **系统配置** - 用户管理支持设置部门负责人
 
 ### 文件变更
-- `app/api/applications.py` - 新增 workflow-records 接口
-- `templates/applications.html` - 添加详情模态框
+- 新建 `app/api/application_requests.py` - 资源申请 API
+- 新建 `templates/workbench.html` - 个人工作台
+- 新建 `templates/notifications.html` - 通知中心
+- 更新 `app/models/models.py` - 新增 ForumComment 模型，ApplicationRequest 新增工作流字段
+- 更新 `app/api/forum.py` - 评论 API
+- 更新 `templates/forum.html` - 评论功能
+- 更新 `templates/base.html` - 导航栏
+
+### 数据库变更
+- `users` 表新增 `is_department_manager` 字段
+- `application_requests` 表新增 `workflow_definition_id`、`workflow_record_id` 字段
+- 新建 `forum_comments` 表
+
+---
+
+## 2026-03-23 问题修复
+
+### 资源工作流审批功能修复
+**问题**: 资源创建工作流绑定后审批 API 找不到待办审批
+
+**修复**:
+- 5 个资源 API 添加 `_get_next_node_id` 函数，自动推进到 review 节点
+- `workflow_def.py` 添加资源状态更新逻辑
+
+**涉及文件**:
+- `app/api/datasets.py`, `app/api/models.py`, `app/api/agents.py`, `app/api/app_store.py`, `app/api/compute.py`
+- `app/api/workflow_def.py`
+- `tests/test_resource_workflow_simple.py`
+
+### 个人工作台 500 错误修复
+**问题**: 访问 `/workbench` 返回 500 错误
+
+**修复**:
+- 使用 `{% raw %}` 包裹 Vue.js 模板内容
+- 修复 Vue.js 语法 (`||` 和 `?.`) 与 Jinja2 冲突
+- 添加 `get_current_user_optional` 函数和统计数据传递
+
+**涉及文件**:
+- `templates/workbench.html`
+- `app/main.py`
 
 ---
 
@@ -34,7 +77,7 @@
 ### 3. 应用场景管理 (`/applications`)
 - 应用场景申报
 - 审批流程
-- **详情查看（含审批流程）**
+- 详情查看（含审批流程）
 - 工作流绑定支持
 
 ### 4. 数据集管理 (`/datasets`)
@@ -77,16 +120,24 @@
 - 帖子发布
 - 帖子列表
 - 分类筛选
+- **评论互动** (v1.3.0 新增)
 
 ### 13. 系统配置 (`/system`)
 - 角色管理（CRUD、分配用户）
 - 用户管理（CRUD、分配角色）
+- **部门负责人设置** (v1.3.0 新增)
 
 ### 14. 站内通知
 - 通知列表
 - 未读计数
 - 标记已读/删除
 - 工作流通知自动发送
+
+### 15. 个人工作台 (`/workbench`) (v1.3.0 新增)
+- 我的申请（应用场景列表）
+- 我的待办（工作流审批列表）
+- 我的通知（最近通知列表）
+- 快捷入口
 
 ---
 
@@ -136,7 +187,8 @@ ai_manage_platform/
 │   │   ├── workflow_def.py
 │   │   ├── forum.py
 │   │   ├── system.py
-│   │   └── notification.py
+│   │   ├── notification.py
+│   │   └── application_requests.py
 │   ├── core/             # 核心配置
 │   │   ├── config.py
 │   │   └── database.py
@@ -160,8 +212,15 @@ ai_manage_platform/
 │   ├── forum.html
 │   ├── system.html
 │   ├── approvals.html
-│   └── notifications.html (待创建)
+│   ├── notifications.html
+│   └── workbench.html
 ├── scripts/              # 工具脚本
+│   ├── init_test_data.py
+│   └── migrations/
+│       ├── add_department_manager_field.py
+│       ├── add_workflow_to_application_request.py
+│       └── create_forum_comments.py
+├── tests/                # 测试文件
 └── main.py               # 启动入口
 ```
 
@@ -182,6 +241,11 @@ ai_manage_platform/
 4. 审核人在"我的待办"中审批
 5. 每个节点的审批记录可追溯查看
 
+### 部门负责人逻辑
+- 在系统配置页面为用户设置"部门负责人"开关
+- 工作流节点配置 `department_head` 自动查找当前用户部门负责人
+- 工作流节点配置 `applicant_department` 自动查找申请部门负责人
+
 ### API 路由前缀
 - `/api/applications` - 应用场景
 - `/api/datasets` - 数据集
@@ -196,14 +260,13 @@ ai_manage_platform/
 - `/api/notification` - 站内通知
 - `/api/dashboard` - 数据看板
 - `/api/forum` - AI 论坛
+- `/api/application-requests` - 资源申请
 
 ---
 
 ## 待办任务
 
-1. **部门负责人逻辑** - 工作流中 `department_head` 和 `applicant_department` 审核人类型需要根据用户部门查找负责人
-2. **通知详情页** - `/notifications` 页面尚未创建
-3. **资源申请工作流绑定** - 资源申请目前使用简单审批，可绑定工作流
+详见 `TODO_PLAN.md`
 
 ---
 
@@ -225,8 +288,7 @@ admin / admin123
 ## Git 记录
 
 **最新提交**:
-- `1b7af2c` - feat: 优化应用场景查看详情，显示审批流程信息 (v1.1.0)
-- `b8c2c3f` - feat: 添加完整的 AI 管理平台功能 (v1.0)
+- `5aa5366` - feat: v1.3.0 个人工作台、通知中心、论坛评论等功能
 
 **当前分支**: master
-**标签**: v1.0, v1.1.0
+**标签**: v1.0, v1.1.0, v1.2.0, v1.3.0

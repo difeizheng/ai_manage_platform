@@ -3,10 +3,10 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
-from app.models.models import ComputeResource, User, ApplicationRequest
+from app.models.models import ComputeResource, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition
 from app.schemas.schemas import ComputeResourceCreate, ComputeResourceResponse, ApplicationRequestCreate
 from app.api.auth import get_current_user
 
@@ -49,13 +49,66 @@ def create_compute_resource(
     db: Session = Depends(get_db)
 ):
     """添加算力资源"""
+    from datetime import datetime
+
+    # 提取工作流定义 ID
+    workflow_definition_id = resource_data.workflow_definition_id
+
+    # 创建算力资源
+    resource_dict = resource_data.model_dump(exclude={'workflow_definition_id'})
     resource = ComputeResource(
-        **resource_data.model_dump(),
-        status="available"
+        **resource_dict,
+        status="pending" if workflow_definition_id else "available"
     )
     db.add(resource)
     db.commit()
     db.refresh(resource)
+
+    # 如果绑定了工作流，自动启动审核流程
+    if workflow_definition_id:
+        workflow_def = db.query(WorkflowDefinition).filter(
+            WorkflowDefinition.id == workflow_definition_id,
+            WorkflowDefinition.bind_type == "compute_resource"
+        ).first()
+        if not workflow_def:
+            raise HTTPException(status_code=400, detail="工作流定义不存在或与算力资源类型不匹配")
+
+        nodes = workflow_def.nodes or []
+        edges = workflow_def.edges or []
+
+        start_node = None
+        for node in nodes:
+            if node.get('type') in ['start', 'submit']:
+                start_node = node
+                break
+        if not start_node:
+            start_node = nodes[0] if nodes else {'id': 'node_1', 'type': 'submit', 'name': '提交'}
+
+        workflow_record = WorkflowRecord(
+            workflow_definition_id=workflow_definition_id,
+            current_node_id=start_node.get('id'),
+            record_type="compute_resource",
+            record_id=resource.id,
+            action=start_node.get('type'),
+            actor_id=current_user.id,
+            description=start_node.get('name'),
+            node_status='completed'
+        )
+        db.add(workflow_record)
+        db.commit()  # 先提交 workflow_record 以生成 ID
+
+        # 获取下一个节点（审核节点）
+        next_node_id = _get_next_node_id(nodes, start_node.get('id'), edges)
+        if next_node_id:
+            workflow_record.current_node_id = next_node_id
+            db.commit()
+
+        resource.status = "under_review"
+        resource.workflow_record_id = workflow_record.id
+        resource.workflow_definition_id = workflow_definition_id
+        db.commit()
+        db.refresh(resource)
+
     return resource
 
 
@@ -128,3 +181,14 @@ def request_compute_resource(
     db.refresh(request)
 
     return {"message": "申请已提交", "request_id": request.id}
+
+
+def _get_next_node_id(nodes, current_node_id, edges):
+    """获取下一个节点的 ID（跳过条件边）"""
+    for edge in edges:
+        if edge.get('source') == current_node_id:
+            # 跳过条件边
+            if edge.get('condition'):
+                continue
+            return edge.get('target')
+    return None

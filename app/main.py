@@ -1,15 +1,35 @@
 """
 AI 管理平台 - 主应用入口
 """
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import get_db, init_db
 from app.api import api_router
+from app.api.auth import get_token_from_request
+from app.models.models import User
+
+
+async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
+    """可选的当前用户（如果未登录返回 None）"""
+    try:
+        token = await get_token_from_request(request)
+        from jose import jwt
+        from app.core.config import settings
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        user = db.query(User).filter(User.username == username).first()
+        return user
+    except Exception:
+        return None
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -114,6 +134,43 @@ async def notifications(request: Request):
 
 
 @app.get("/workbench")
-async def workbench(request: Request):
+async def workbench(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user_optional)):
     """个人工作台"""
-    return templates.TemplateResponse("workbench.html", {"request": request})
+    from app.models.models import Application, WorkflowRecord, Notification
+
+    # 获取统计数据
+    user_id = current_user.id if current_user else None
+
+    # 我的申请数量
+    my_applications_count = 0
+    if user_id:
+        my_applications_count = db.query(Application).filter(Application.applicant_id == user_id).count()
+
+    # 我的待办数量（简化版，实际应该根据工作流和角色计算）
+    my_approvals_count = 0
+    if user_id:
+        # 这里简化处理，实际应该查询工作流记录
+        pass
+
+    # 未读通知数量
+    unread_notifications_count = 0
+    if user_id:
+        unread_notifications_count = db.query(Notification).filter(
+            Notification.user_id == user_id,
+            Notification.is_read == False
+        ).count()
+
+    # 应用场景总数
+    applications_total = db.query(Application).count()
+
+    # 用户名
+    user_name = current_user.real_name or current_user.username if current_user else "访客"
+
+    return templates.TemplateResponse("workbench.html", {
+        "request": request,
+        "user_name": user_name,
+        "my_applications_count": my_applications_count,
+        "my_approvals_count": my_approvals_count,
+        "unread_notifications_count": unread_notifications_count,
+        "applications_total": applications_total
+    })

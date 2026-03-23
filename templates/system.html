@@ -22,6 +22,11 @@
                 class="px-6 py-4 text-sm font-medium border-b-2 transition-colors">
             <i class="fas fa-user-tag mr-2"></i>角色管理
         </button>
+        <button @click="activeTab = 'departments'"
+                :class="activeTab === 'departments' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="px-6 py-4 text-sm font-medium border-b-2 transition-colors">
+            <i class="fas fa-sitemap mr-2"></i>部门管理
+        </button>
     </div>
 
     <!-- 用户管理 -->
@@ -162,6 +167,58 @@
             </div>
         </div>
     </div>
+
+    <!-- 部门管理 -->
+    <div v-if="activeTab === 'departments'" class="p-6">
+        <div class="flex justify-between mb-6">
+            <div class="flex gap-4">
+                <select v-model="departmentFilters.is_active" class="border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">全部状态</option>
+                    <option value="true">启用</option>
+                    <option value="false">禁用</option>
+                </select>
+                <button @click="loadDepartments" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <i class="fas fa-search mr-1"></i> 搜索
+                </button>
+            </div>
+            <button @click="showCreateDeptModal = true" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <i class="fas fa-plus mr-1"></i> 新建部门
+            </button>
+        </div>
+
+        <!-- 部门列表 -->
+        <div class="grid grid-cols-3 gap-4">
+            <div v-for="dept in departments" :key="dept.id"
+                 class="border-2 rounded-xl p-4 transition-all hover:shadow-md"
+                 :class="dept.is_active ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-semibold text-lg">{{ dept.name }}</h3>
+                    <span :class="dept.is_active ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'" class="px-2 py-1 text-xs rounded">
+                        {{ dept.is_active ? '启用' : '禁用' }}
+                    </span>
+                </div>
+                <p class="text-sm text-gray-500 mb-2">{{ dept.description || '无描述' }}</p>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs text-gray-500">编码：{{ dept.code }}</span>
+                </div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs text-gray-500">负责人：{{ dept.manager?.real_name || dept.manager?.username || '-' }}</span>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="editDepartment(dept)" class="flex-1 text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">
+                        <i class="fas fa-edit"></i> 编辑
+                    </button>
+                    <button @click="deleteDepartment(dept)" class="flex-1 text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div v-if="departments.length === 0" class="col-span-3 text-center py-12 text-gray-400">
+                <i class="fas fa-folder-open text-4xl mb-4"></i>
+                <p>暂无部门，点击右上角创建</p>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- 新建/编辑角色模态框 -->
@@ -281,6 +338,63 @@
         </div>
     </div>
 </div>
+
+<!-- 新建/编辑部门模态框 -->
+<div v-if="showCreateDeptModal || showEditDeptModal"
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @click.self="closeDeptModal">
+    <div class="bg-white rounded-xl w-full max-w-lg">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">{{ showEditDeptModal ? '编辑部门' : '新建部门' }}</h3>
+            <button @click="closeDeptModal" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">部门名称 *</label>
+                <input v-model="deptForm.name" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="如：技术部">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">部门编码 *</label>
+                <input v-model="deptForm.code" type="text" class="w-full border border-gray-300 rounded-lg px-4 py-2" :disabled="showEditDeptModal" placeholder="如：tech_dept">
+                <p class="text-xs text-gray-500 mt-1">编码唯一，创建后不可修改</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">上级部门</label>
+                <select v-model="deptForm.parent_id" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">无（作为顶级部门）</option>
+                    <option v-for="dept in departments" :key="dept.id" :value="dept.id" :disabled="dept.parent_id === deptForm.id">
+                        {{ dept.name }}
+                    </option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">部门负责人</label>
+                <select v-model="deptForm.manager_id" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">请选择</option>
+                    <option v-for="user in users" :key="user.id" :value="user.id">
+                        {{ user.real_name || user.username }} ({{ user.username }})
+                    </option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea v-model="deptForm.description" rows="3" class="w-full border border-gray-300 rounded-lg px-4 py-2" placeholder="部门职责说明"></textarea>
+            </div>
+            <div class="flex items-center gap-4">
+                <label class="flex items-center">
+                    <input v-model="deptForm.is_active" type="checkbox" class="mr-2">
+                    <span class="text-sm text-gray-700">启用</span>
+                </label>
+            </div>
+        </div>
+        <div class="p-4 border-t border-gray-200 flex justify-end gap-3">
+            <button @click="closeDeptModal" class="px-4 py-2 text-gray-600 hover:text-gray-800">取消</button>
+            <button @click="saveDepartment" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">保存</button>
+        </div>
+    </div>
+</div>
 {% endraw %}
 </div>
 {% endblock %}
@@ -315,10 +429,25 @@ createApp({
             showEditRoleModal: false,
             showUserRolesModal: false,
             showRoleUsersModal: false,
+            showCreateDeptModal: false,
+            showEditDeptModal: false,
             roleForm: {
                 name: '',
                 code: '',
                 description: '',
+                is_active: true
+            },
+            departmentFilters: {
+                is_active: ''
+            },
+            departments: [],
+            selectedDepartment: null,
+            deptForm: {
+                name: '',
+                code: '',
+                description: '',
+                parent_id: null,
+                manager_id: null,
                 is_active: true
             }
         }
@@ -660,6 +789,116 @@ createApp({
                 }
             } catch (err) {
                 console.error('加载角色用户失败:', err);
+            }
+        },
+
+        // 部门相关
+        async loadDepartments() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                showError('请先登录');
+                return;
+            }
+
+            let url = '/api/system/departments?';
+            if (this.departmentFilters.is_active) url += 'is_active=' + this.departmentFilters.is_active + '&';
+
+            try {
+                const res = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.status === 401) {
+                    showError('登录已过期');
+                    return;
+                }
+                this.departments = await res.json();
+            } catch (err) {
+                console.error('加载部门失败:', err);
+                showError('加载部门失败');
+            }
+        },
+
+        closeDeptModal() {
+            this.showCreateDeptModal = false;
+            this.showEditDeptModal = false;
+            this.deptForm = {
+                name: '',
+                code: '',
+                description: '',
+                parent_id: null,
+                manager_id: null,
+                is_active: true
+            };
+            this.selectedDepartment = null;
+        },
+
+        editDepartment(dept) {
+            this.deptForm = {
+                name: dept.name,
+                code: dept.code,
+                description: dept.description || '',
+                parent_id: dept.parent_id,
+                manager_id: dept.manager_id,
+                is_active: dept.is_active
+            };
+            this.selectedDepartment = dept;
+            this.showEditDeptModal = true;
+        },
+
+        async saveDepartment() {
+            if (!this.deptForm.name || !this.deptForm.code) {
+                showError('请填写部门名称和编码');
+                return;
+            }
+
+            const token = localStorage.getItem('token');
+            const url = this.showEditDeptModal ? '/api/system/departments/' + this.selectedDepartment.id : '/api/system/departments';
+            const method = this.showEditDeptModal ? 'PUT' : 'POST';
+
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.deptForm)
+                });
+
+                if (res.ok) {
+                    showSuccess('保存成功');
+                    this.closeDeptModal();
+                    this.loadDepartments();
+                } else {
+                    const data = await res.json();
+                    showError(data.detail || '保存失败');
+                }
+            } catch (err) {
+                console.error('保存失败:', err);
+                showError('保存失败');
+            }
+        },
+
+        async deleteDepartment(dept) {
+            if (!await showConfirm('确定删除部门 "' + dept.name + '" 吗？')) return;
+
+            const token = localStorage.getItem('token');
+            try {
+                const res = await fetch('/api/system/departments/' + dept.id, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (res.ok) {
+                    showSuccess('删除成功');
+                    this.loadDepartments();
+                } else {
+                    const data = await res.json();
+                    showError(data.detail || '删除失败');
+                }
+            } catch (err) {
+                console.error('删除失败:', err);
+                showError('删除失败');
             }
         },
 

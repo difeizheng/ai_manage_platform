@@ -117,7 +117,7 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    pass
+    workflow_definition_id: Optional[int] = None
 
 
 class DatasetUpdate(BaseModel):
@@ -130,6 +130,11 @@ class DatasetResponse(DatasetBase):
     id: int
     creator_id: int
     status: str
+    workflow_definition_id: Optional[int] = None
+    workflow_record_id: Optional[int] = None
+    review_comments: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -153,7 +158,7 @@ class ModelBase(BaseModel):
 
 
 class ModelCreate(ModelBase):
-    pass
+    workflow_definition_id: Optional[int] = None
 
 
 class ModelUpdate(BaseModel):
@@ -167,6 +172,11 @@ class ModelResponse(ModelBase):
     creator_id: int
     source_file_path: Optional[str] = None
     status: str
+    workflow_definition_id: Optional[int] = None
+    workflow_record_id: Optional[int] = None
+    review_comments: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     download_count: int
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -191,7 +201,7 @@ class AgentBase(BaseModel):
 
 
 class AgentCreate(AgentBase):
-    pass
+    workflow_definition_id: Optional[int] = None
 
 
 class AgentUpdate(BaseModel):
@@ -204,6 +214,11 @@ class AgentResponse(AgentBase):
     id: int
     creator_id: int
     status: str
+    workflow_definition_id: Optional[int] = None
+    workflow_record_id: Optional[int] = None
+    review_comments: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -227,7 +242,7 @@ class AppStoreItemBase(BaseModel):
 
 
 class AppStoreItemCreate(AppStoreItemBase):
-    pass
+    workflow_definition_id: Optional[int] = None
 
 
 class AppStoreItemResponse(AppStoreItemBase):
@@ -235,6 +250,11 @@ class AppStoreItemResponse(AppStoreItemBase):
     usage_count: int
     rating: float
     status: str
+    workflow_definition_id: Optional[int] = None
+    workflow_record_id: Optional[int] = None
+    review_comments: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -255,13 +275,18 @@ class ComputeResourceBase(BaseModel):
 
 
 class ComputeResourceCreate(ComputeResourceBase):
-    pass
+    workflow_definition_id: Optional[int] = None
 
 
 class ComputeResourceResponse(ComputeResourceBase):
     id: int
     used_compute: float
     status: str
+    workflow_definition_id: Optional[int] = None
+    workflow_record_id: Optional[int] = None
+    review_comments: Optional[str] = None
+    reviewer_id: Optional[int] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -481,6 +506,41 @@ class ForumCommentResponse(ForumCommentBase):
     is_deleted: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============ 部门管理 ============
+class DepartmentBase(BaseModel):
+    name: str
+    code: str
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    manager_id: Optional[int] = None
+    is_active: bool = True
+
+
+class DepartmentCreate(DepartmentBase):
+    pass
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    manager_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class DepartmentResponse(DepartmentBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    parent: Optional["DepartmentResponse"] = None
+    children: Optional[list["DepartmentResponse"]] = []
+    manager: Optional[UserResponse] = None
+    member_count: int = 0
 
     class Config:
         from_attributes = True

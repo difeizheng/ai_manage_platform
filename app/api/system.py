@@ -8,9 +8,9 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Role, UserRole, ApplicationRequest, Notification
+from app.models.models import User, Role, UserRole, ApplicationRequest, Notification, Department
 from app.api.auth import get_current_user
-from app.schemas.schemas import UserResponse, RoleCreate, RoleUpdate, RoleResponse, UserRoleAssign
+from app.schemas.schemas import UserResponse, RoleCreate, RoleUpdate, RoleResponse, UserRoleAssign, DepartmentCreate, DepartmentUpdate, DepartmentResponse
 
 router = APIRouter()
 
@@ -478,3 +478,158 @@ def init_test_data(
         "created_roles": [r.code for r in created_roles],
         "created_users": [u.username for u in created_users]
     }
+
+
+# ============ 部门管理 ============
+@router.get("/departments")
+def list_departments(
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    """获取部门列表"""
+    query = db.query(Department)
+    if is_active is not None:
+        query = query.filter(Department.is_active == is_active)
+    departments = query.order_by(Department.created_at.desc()).all()
+    return departments
+
+
+@router.get("/departments/{dept_id}")
+def get_department(
+    dept_id: int,
+    db: Session = Depends(get_db)
+):
+    """获取部门详情"""
+    department = db.query(Department).filter(Department.id == dept_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="部门不存在")
+    return department
+
+
+@router.post("/departments")
+async def create_department(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建新部门"""
+    if current_user.role not in ['admin']:
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    data = await request.json()
+
+    # 检查部门编码是否已存在
+    existing = db.query(Department).filter(Department.code == data.get('code')).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="部门编码已存在")
+
+    # 检查部门名称是否已存在
+    existing = db.query(Department).filter(Department.name == data.get('name')).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="部门名称已存在")
+
+    department = Department(
+        name=data.get('name'),
+        code=data.get('code'),
+        description=data.get('description', ''),
+        parent_id=data.get('parent_id'),
+        manager_id=data.get('manager_id'),
+        is_active=data.get('is_active', True)
+    )
+    db.add(department)
+    db.commit()
+    db.refresh(department)
+    return department
+
+
+@router.put("/departments/{dept_id}")
+async def update_department(
+    dept_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新部门"""
+    if current_user.role not in ['admin']:
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    department = db.query(Department).filter(Department.id == dept_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="部门不存在")
+
+    data = await request.json()
+
+    if 'name' in data:
+        # 检查名称是否被其他部门使用
+        existing = db.query(Department).filter(
+            Department.name == data['name'],
+            Department.id != dept_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="部门名称已存在")
+        department.name = data['name']
+
+    if 'description' in data:
+        department.description = data['description']
+
+    if 'parent_id' in data:
+        department.parent_id = data['parent_id']
+
+    if 'manager_id' in data:
+        department.manager_id = data['manager_id']
+
+    if 'is_active' in data:
+        department.is_active = data['is_active']
+
+    db.commit()
+    db.refresh(department)
+    return department
+
+
+@router.delete("/departments/{dept_id}")
+def delete_department(
+    dept_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """删除部门"""
+    if current_user.role not in ['admin']:
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    department = db.query(Department).filter(Department.id == dept_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="部门不存在")
+
+    # 检查是否有子部门
+    children_count = db.query(Department).filter(Department.parent_id == dept_id).count()
+    if children_count > 0:
+        raise HTTPException(status_code=400, detail=f"有{children_count}个子部门，无法删除")
+
+    # 检查是否有用户属于此部门
+    users_count = db.query(User).filter(User.department_id == dept_id).count()
+    if users_count > 0:
+        raise HTTPException(status_code=400, detail=f"有{users_count}个用户属于此部门，无法删除")
+
+    db.delete(department)
+    db.commit()
+    return {"message": "删除成功"}
+
+
+@router.get("/departments/tree")
+def get_departments_tree(
+    db: Session = Depends(get_db)
+):
+    """获取部门树形结构"""
+    departments = db.query(Department).filter(Department.parent_id.is_(None)).all()
+
+    def build_tree(dept):
+        return {
+            "id": dept.id,
+            "name": dept.name,
+            "code": dept.code,
+            "description": dept.description,
+            "is_active": dept.is_active,
+            "children": [build_tree(child) for child in dept.children]
+        }
+
+    return [build_tree(dept) for dept in departments]

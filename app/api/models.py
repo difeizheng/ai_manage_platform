@@ -1,14 +1,14 @@
 """
 模型管理 API
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import os
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.models import Model, User, ApplicationRequest
+from app.models.models import Model, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition
 from app.schemas.schemas import ModelCreate, ModelUpdate, ModelResponse, ApplicationRequestCreate
 from app.api.auth import get_current_user
 
@@ -21,6 +21,7 @@ def list_models(
     limit: int = 100,
     model_type: str = None,
     framework: str = None,
+    status: str = None,
     db: Session = Depends(get_db)
 ):
     """获取模型列表"""
@@ -30,6 +31,8 @@ def list_models(
         query = query.filter(Model.model_type == model_type)
     if framework:
         query = query.filter(Model.framework == framework)
+    if status:
+        query = query.filter(Model.status == status)
 
     models = query.offset(skip).limit(limit).all()
     return models
@@ -46,17 +49,19 @@ def get_model(model_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=ModelResponse)
 def create_model(
-    name: str,
-    description: str = None,
-    model_type: str = None,
-    framework: str = None,
-    business_scenarios: str = None,
+    name: str = Form(...),
+    description: str = Form(None),
+    model_type: str = Form(None),
+    framework: str = Form(None),
+    business_scenarios: str = Form(None),
+    workflow_definition_id: int = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     source_file: UploadFile = File(None)
 ):
     """创建/上传模型"""
     import json
+    from datetime import datetime
 
     # 处理文件上传
     source_file_path = None
@@ -75,6 +80,7 @@ def create_model(
                 return None
         return None
 
+    # 创建模型
     model = Model(
         name=name,
         description=description,
@@ -83,11 +89,57 @@ def create_model(
         business_scenarios=parse_json(business_scenarios),
         creator_id=current_user.id,
         source_file_path=source_file_path,
-        status="available"
+        status="pending" if workflow_definition_id else "approved"
     )
     db.add(model)
     db.commit()
     db.refresh(model)
+
+    # 如果绑定了工作流，自动启动审核流程
+    if workflow_definition_id:
+        workflow_def = db.query(WorkflowDefinition).filter(
+            WorkflowDefinition.id == workflow_definition_id,
+            WorkflowDefinition.bind_type == "model"
+        ).first()
+        if not workflow_def:
+            raise HTTPException(status_code=400, detail="工作流定义不存在或与模型类型不匹配")
+
+        nodes = workflow_def.nodes or []
+        edges = workflow_def.edges or []
+
+        start_node = None
+        for node in nodes:
+            if node.get('type') in ['start', 'submit']:
+                start_node = node
+                break
+        if not start_node:
+            start_node = nodes[0] if nodes else {'id': 'node_1', 'type': 'submit', 'name': '提交'}
+
+        workflow_record = WorkflowRecord(
+            workflow_definition_id=workflow_definition_id,
+            current_node_id=start_node.get('id'),
+            record_type="model",
+            record_id=model.id,
+            action=start_node.get('type'),
+            actor_id=current_user.id,
+            description=start_node.get('name'),
+            node_status='completed'
+        )
+        db.add(workflow_record)
+        db.commit()  # 先提交 workflow_record 以生成 ID
+
+        # 获取下一个节点（审核节点）
+        next_node_id = _get_next_node_id(nodes, start_node.get('id'), edges)
+        if next_node_id:
+            workflow_record.current_node_id = next_node_id
+            db.commit()
+
+        model.status = "under_review"
+        model.workflow_record_id = workflow_record.id
+        model.workflow_definition_id = workflow_definition_id
+        db.commit()
+        db.refresh(model)
+
     return model
 
 
@@ -164,3 +216,14 @@ def request_model_access(
     db.refresh(request)
 
     return {"message": "申请已提交", "request_id": request.id}
+
+
+def _get_next_node_id(nodes, current_node_id, edges):
+    """获取下一个节点的 ID（跳过条件边）"""
+    for edge in edges:
+        if edge.get('source') == current_node_id:
+            # 跳过条件边
+            if edge.get('condition'):
+                continue
+            return edge.get('target')
+    return None

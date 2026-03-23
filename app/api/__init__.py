@@ -3,7 +3,7 @@ API 路由汇总
 """
 from fastapi import APIRouter
 
-from app.api import dashboard, applications, datasets, models, agents, app_store, compute, workflow, forum, auth, workflow_def, system, notification, application_requests
+from app.api import dashboard, applications, datasets, models, agents, app_store, compute, workflow, forum, auth, workflow_def, system, notification, application_requests, resource_workflow
 
 api_router = APIRouter()
 
@@ -21,3 +21,4 @@ api_router.include_router(auth.router, prefix="/api/auth", tags=["用户认证"]
 api_router.include_router(system.router, prefix="/api/system", tags=["系统配置"])
 api_router.include_router(notification.router, prefix="/api/notification", tags=["站内通知"])
 api_router.include_router(application_requests.router, prefix="/api/application-requests", tags=["资源申请"])
+api_router.include_router(resource_workflow.router, prefix="/api/resource-workflow", tags=["资源工作流审核"])

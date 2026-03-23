@@ -86,7 +86,17 @@
       "Bash(dir appapi__pycache__)",
       "Bash(findstr applications:*)",
       "Bash(powershell -Command \"taskkill /IM python.exe /F\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc3NDU0Mjk3OH0.c5UKUInF3DU2QfCQ-dtPxL-DhvX4Qx9htXxLTBAXi2A\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc3NDU0Mjk3OH0.c5UKUInF3DU2QfCQ-dtPxL-DhvX4Qx9htXxLTBAXi2A\")",
+      "Bash(powershell \"Stop-Process -Id 33220 -Force\")",
+      "Bash(powershell \"Get-Process | Where-Object {$_.Id -in 33220,3868,27404,33508,37784} | Stop-Process -Force\" 2>&1)",
+      "Bash(uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(powershell \"Stop-Process -Id 3868,37784,33508,27404,33220 -Force\" 2>&1)",
+      "Bash(find . -name \"*.pyc\" -delete)",
+      "Bash(find . -name \"__pycache__\" -type d -exec rm -rf {} +)",
+      "Bash(powershell \"Stop-Process -Id 30408 -Force\" 2>&1)",
+      "Bash(START /B python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1)",
+      "Bash(powershell \"Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }\" 2>&1)",
+      "Bash(grep -r \"verbatim\" templates/*.html)"
     ]
   }
 }

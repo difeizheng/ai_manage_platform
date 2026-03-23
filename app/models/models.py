@@ -20,7 +20,8 @@ class User(Base):
     real_name = Column(String(100))
     email = Column(String(100))
     phone = Column(String(20))
-    department = Column(String(100))  # 所属部门
+    department = Column(String(100))  # 所属部门（文本字段，兼容旧数据）
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)  # 所属部门 ID
     role = Column(String(20), default="user")  # user, reviewer, admin
     is_department_manager = Column(Boolean, default=False)  # 是否部门负责人
     is_active = Column(Boolean, default=True)
@@ -29,10 +30,11 @@ class User(Base):
 
     # 关联
     applications = relationship("Application", back_populates="applicant", foreign_keys="Application.applicant_id")
-    created_datasets = relationship("Dataset", back_populates="creator")
-    created_models = relationship("Model", back_populates="creator")
-    created_agents = relationship("Agent", back_populates="creator")
+    created_datasets = relationship("Dataset", foreign_keys="Dataset.creator_id", back_populates="creator")
+    created_models = relationship("Model", foreign_keys="Model.creator_id", back_populates="creator")
+    created_agents = relationship("Agent", foreign_keys="Agent.creator_id", back_populates="creator")
     assigned_roles = relationship("UserRole", foreign_keys="UserRole.user_id", back_populates="user")
+    department_rel = relationship("Department", back_populates="members", foreign_keys=[department_id])
 
 
 # ============ 应用场景 ============
@@ -95,14 +97,20 @@ class Dataset(Base):
     business_domain = Column(String(50))  # 业务领域：财务、合同、水电等
     data_type = Column(String(20))  # structured/unstructured
     source = Column(String(20))  # internal/external
-    status = Column(String(20), default="available")  # available, using, archived
+    status = Column(String(20), default="pending")  # pending, under_review, approved, rejected, archived
     record_count = Column(Integer, default=0)  # 数据量
     field_schema = Column(JSON)  # 字段说明
     usage_scenarios = Column(JSON)  # 使用场景
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"), nullable=True)  # 绑定的工作流
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"), nullable=True)  # 当前工作流记录
+    review_comments = Column(Text)  # 审核意见
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 审核人
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # 审批时间
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    creator = relationship("User", back_populates="created_datasets")
+    creator = relationship("User", foreign_keys=[creator_id], back_populates="created_datasets")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 # ============ 模型 ============
@@ -124,12 +132,18 @@ class Model(Base):
     api_docs = Column(Text)  # API 文档
     usage_guide = Column(Text)  # 使用说明
     source_file_path = Column(String(500))  # 源文件路径
-    status = Column(String(20), default="available")
+    status = Column(String(20), default="pending")  # pending, under_review, approved, rejected, available
     download_count = Column(Integer, default=0)
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"), nullable=True)  # 绑定的工作流
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"), nullable=True)  # 当前工作流记录
+    review_comments = Column(Text)  # 审核意见
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 审核人
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # 审批时间
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    creator = relationship("User", back_populates="created_models")
+    creator = relationship("User", foreign_keys=[creator_id], back_populates="created_models")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 # ============ 智能体 ============
@@ -150,11 +164,17 @@ class Agent(Base):
     required_datasets = Column(JSON)  # 依赖数据集
     environment_requirements = Column(JSON)  # 运行环境要求
     api_endpoint = Column(String(500))  # 接口地址
-    status = Column(String(20), default="available")
+    status = Column(String(20), default="pending")  # pending, under_review, approved, rejected, available
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"), nullable=True)  # 绑定的工作流
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"), nullable=True)  # 当前工作流记录
+    review_comments = Column(Text)  # 审核意见
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 审核人
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # 审批时间
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    creator = relationship("User", back_populates="created_agents")
+    creator = relationship("User", foreign_keys=[creator_id], back_populates="created_agents")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 # ============ 应用广场 ============
@@ -176,9 +196,16 @@ class AppStoreItem(Base):
     screenshots = Column(JSON)  # 截图
     usage_guide = Column(Text)  # 使用指南
     sdk_docs = Column(Text)  # SDK 文档
-    status = Column(String(20), default="published")
+    status = Column(String(20), default="pending")  # pending, under_review, approved, rejected, published
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"), nullable=True)  # 绑定的工作流
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"), nullable=True)  # 当前工作流记录
+    review_comments = Column(Text)  # 审核意见
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 审核人
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # 审批时间
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 # ============ 算力资源 ============
@@ -193,12 +220,19 @@ class ComputeResource(Base):
     memory_size = Column(Integer)  # 显存/内存 (GB)
     total_compute = Column(Float)  # 总算力 (TFLOPS)
     used_compute = Column(Float, default=0)  # 已用算力
-    status = Column(String(20), default="available")  # available, in_use, maintenance
+    status = Column(String(20), default="pending")  # pending, under_review, approved, rejected, available, in_use, maintenance
     location = Column(String(100))  # 位置
     owner_department = Column(String(100))  # 所属部门
     support_scenarios = Column(JSON)  # 支持场景：训练，推理等
+    workflow_definition_id = Column(Integer, ForeignKey("workflow_definitions.id"), nullable=True)  # 绑定的工作流
+    workflow_record_id = Column(Integer, ForeignKey("workflow_records.id"), nullable=True)  # 当前工作流记录
+    review_comments = Column(Text)  # 审核意见
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 审核人
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # 审批时间
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 # ============ 业务流程 ============
@@ -367,3 +401,29 @@ class Notification(Base):
 
     # 关联
     recipient = relationship("User", backref="notifications")
+
+
+# ============ 部门管理 ============
+class Department(Base):
+    """部门表"""
+    __tablename__ = "departments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)  # 部门名称
+    code = Column(String(50), unique=True, nullable=False)  # 部门编码
+    description = Column(Text)  # 部门描述
+    parent_id = Column(Integer, ForeignKey("departments.id"), nullable=True)  # 父部门 ID
+    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 部门负责人 ID
+    is_active = Column(Boolean, default=True)  # 是否启用
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    parent = relationship("Department", remote_side=[id], backref="children")
+    manager = relationship("User", foreign_keys=[manager_id], backref="managed_department")
+    members = relationship("User", foreign_keys="User.department_id", back_populates="department_rel")
+
+
+# 更新 User 模型，添加部门关联
+# 注意：需要在 User 模型中添加 department_id 字段和 department_rel 关联
+# 这里我们通过迁移脚本来处理
