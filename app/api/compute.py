@@ -4,9 +4,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import ComputeResource, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition
+from app.models.models import ComputeResource, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition, Notification
 from app.schemas.schemas import ComputeResourceCreate, ComputeResourceResponse, ApplicationRequestCreate
 from app.api.auth import get_current_user
 
@@ -159,10 +160,13 @@ def request_compute_resource(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """申请算力资源使用权限"""
+    """申请算力资源使用权限 - 支持工作流审批"""
     resource = db.query(ComputeResource).filter(ComputeResource.id == resource_id).first()
     if not resource:
         raise HTTPException(status_code=404, detail="算力资源不存在")
+
+    # 检查算力资源是否绑定了工作流
+    workflow_definition_id = resource.workflow_definition_id
 
     request = ApplicationRequest(
         request_type="compute",
@@ -174,13 +178,68 @@ def request_compute_resource(
         expected_duration=request_data.expected_duration,
         expected_frequency=request_data.expected_frequency,
         related_application=request_data.related_application,
-        status="pending"
+        workflow_definition_id=workflow_definition_id,  # 绑定工作流
+        status="under_review" if workflow_definition_id else "pending"
     )
     db.add(request)
     db.commit()
     db.refresh(request)
 
-    return {"message": "申请已提交", "request_id": request.id}
+    # 如果绑定了工作流，启动工作流
+    if workflow_definition_id:
+        workflow_def = db.query(WorkflowDefinition).filter(
+            WorkflowDefinition.id == workflow_definition_id
+        ).first()
+
+        if workflow_def:
+            # 创建工作流记录
+            nodes = workflow_def.nodes or []
+            start_node = next((n for n in nodes if n.get('type') in ['start', 'submit']), None)
+            if not start_node:
+                start_node = {'id': 'node_1', 'type': 'submit', 'name': '提交'}
+
+            workflow_record = WorkflowRecord(
+                workflow_definition_id=workflow_def.id,
+                current_node_id=start_node.get('id'),
+                record_type='application_request',
+                record_id=request.id,
+                action=start_node.get('type'),
+                actor_id=current_user.id,
+                description=start_node.get('name'),
+                node_status='completed'
+            )
+            db.add(workflow_record)
+            db.commit()
+            db.refresh(workflow_record)
+
+            request.workflow_record_id = workflow_record.id
+
+            # 获取下一个节点
+            edges = workflow_def.edges or []
+            from app.api.application_requests import get_next_node, get_approver_users
+            next_node_info = get_next_node(nodes, start_node.get('id'), edges)
+            next_node = next_node_info.get('next_node')
+
+            if next_node and next_node.get('type') in ['review', 'approve']:
+                workflow_record.current_node_id = next_node.get('id')
+
+                # 获取审核人并发送通知
+                approvers = get_approver_users(next_node.get('config', {}), db, current_user, None)
+
+                for approver in approvers:
+                    notification = Notification(
+                        user_id=approver.id,
+                        title=f"待办审批：{workflow_def.name} - {next_node.get('name')}",
+                        content=f"您有一个待审批的资源申请\n申请人：{current_user.real_name or current_user.username}\n资源名称：{request.resource_name}\n申请用途：{request.purpose or '无'}",
+                        type="workflow",
+                        related_type="workflow_record",
+                        related_id=workflow_record.id
+                    )
+                    db.add(notification)
+
+                db.commit()
+
+    return {"message": "申请已提交，等待审批", "request_id": request.id}
 
 
 def _get_next_node_id(nodes, current_node_id, edges):
