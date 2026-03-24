@@ -8,9 +8,10 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import User, Role, UserRole, ApplicationRequest, Notification, Department
+from app.core.audit import log_action, log_login
+from app.models.models import User, Role, UserRole, ApplicationRequest, Notification, Department, AuditLog
 from app.api.auth import get_current_user
-from app.schemas.schemas import UserResponse, RoleCreate, RoleUpdate, RoleResponse, UserRoleAssign, DepartmentCreate, DepartmentUpdate, DepartmentResponse
+from app.schemas.schemas import UserResponse, RoleCreate, RoleUpdate, RoleResponse, UserRoleAssign, DepartmentCreate, DepartmentResponse
 
 router = APIRouter()
 
@@ -72,6 +73,19 @@ async def create_role(
     db.add(role)
     db.commit()
     db.refresh(role)
+
+    # 记录审计日志
+    log_action(
+        db=db,
+        action="CREATE",
+        resource_type="role",
+        resource_id=role.id,
+        resource_name=role.name,
+        user_id=current_user.id,
+        username=current_user.username,
+        request=request
+    )
+
     return role
 
 
@@ -633,3 +647,52 @@ def get_departments_tree(
         }
 
     return [build_tree(dept) for dept in departments]
+
+
+# ============ 审计日志 ============
+@router.get("/audit-logs")
+def list_audit_logs(
+    skip: int = 0,
+    limit: int = 100,
+    user_id: Optional[int] = None,
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取审计日志列表 - 仅 admin 可访问"""
+    if current_user.role not in ['admin']:
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    query = db.query(AuditLog)
+
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if resource_type:
+        query = query.filter(AuditLog.resource_type == resource_type)
+    if status:
+        query = query.filter(AuditLog.status == status)
+
+    total = query.count()
+    logs = query.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit).all()
+
+    return {"items": logs, "total": total}
+
+
+@router.get("/audit-logs/{log_id}")
+def get_audit_log(
+    log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取审计日志详情 - 仅 admin 可访问"""
+    if current_user.role not in ['admin']:
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    log = db.query(AuditLog).filter(AuditLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="日志不存在")
+    return log

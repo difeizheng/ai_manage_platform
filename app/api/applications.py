@@ -8,8 +8,8 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.models.models import Application, User, WorkflowRecord, WorkflowDefinition, Role, UserRole
-from app.schemas.schemas import ApplicationCreate, ApplicationUpdate, ApplicationResponse
-from app.api.auth import get_current_user
+from app.schemas.schemas import ApplicationCreate, ApplicationUpdate, ApplicationResponse, PaginatedResponse
+from app.api.auth import get_current_user, can_edit_resource, can_delete_resource
 
 router = APIRouter()
 
@@ -27,18 +27,19 @@ def list_my_applications(
     return {"items": applications, "total": len(applications)}
 
 
-@router.get("/", response_model=List[ApplicationResponse])
+@router.get("/")
 def list_applications(
-    skip: int = 0,
-    limit: int = 100,
-    status: Optional[str] = Query(None, description="Filter by status"),
-    department: Optional[str] = Query(None, description="Filter by department"),
-    creator: Optional[str] = Query(None, description="Filter by creator ('me' for current user)"),
-    reviewer_id_filter: Optional[str] = Query(None, description="Filter by reviewer ID ('me' for current user)"),
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    status: Optional[str] = Query(None, description="状态"),
+    department: Optional[str] = Query(None, description="部门"),
+    creator: Optional[str] = Query(None, description="创建人（'me' 为当前用户）"),
+    reviewer_id_filter: Optional[str] = Query(None, description="审批人（'me' 为当前用户）"),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取应用场景列表 - 支持数据权限控制"""
+    """获取应用场景列表 - 支持分页、多条件过滤和数据权限控制"""
     query = db.query(Application)
 
     # 数据权限控制：普通用户只能查看自己的应用
@@ -65,8 +66,20 @@ def list_applications(
     if department:
         query = query.filter(Application.department == department)
 
+    # 关键词搜索（标题或业务背景）
+    if keyword:
+        query = query.filter(
+            (Application.title.contains(keyword)) |
+            (Application.business_background.contains(keyword))
+        )
+
+    # 获取总数
+    total = query.count()
+
+    # 分页查询
     applications = query.order_by(Application.created_at.desc()).offset(skip).limit(limit).all()
-    return applications
+
+    return PaginatedResponse.create(items=applications, total=total, skip=skip, limit=limit)
 
 
 def get_node_pending_users(node_config, db, applicant_department=None):
@@ -82,11 +95,67 @@ def get_node_pending_users(node_config, db, applicant_department=None):
 
     # 特殊处理：部门负责人、申请部门负责人
     if approver == 'department_head':
-        # TODO: 根据申请人部门查找部门负责人
-        return {"role_name": "部门负责人", "users": ["待配置"]}
+        # 根据申请人部门查找部门负责人
+        if not applicant_department:
+            return {"role_name": "部门负责人", "users": []}
+        # 查找该部门的部门负责人（is_department_manager=True）
+        dept_managers = db.query(User).filter(
+            User.department == applicant_department,
+            User.is_department_manager == True,
+            User.is_active == True
+        ).all()
+        if dept_managers:
+            return {
+                "role_name": "部门负责人",
+                "users": [u.real_name or u.username for u in dept_managers]
+            }
+        # 如果没有明确标记的部门负责人，查找部门经理角色
+        manager_role = db.query(Role).filter(Role.code == 'department_manager').first()
+        if manager_role:
+            user_roles = db.query(UserRole).filter(UserRole.role_id == manager_role.id).all()
+            user_ids = [ur.user_id for ur in user_roles]
+            users = db.query(User).filter(
+                User.id.in_(user_ids),
+                User.department == applicant_department,
+                User.is_active == True
+            ).all()
+            if users:
+                return {
+                    "role_name": "部门负责人",
+                    "users": [u.real_name or u.username for u in users]
+                }
+        return {"role_name": "部门负责人", "users": []}
     elif approver == 'applicant_department':
-        # TODO: 根据申请部门查找该部门的负责人
-        return {"role_name": f"{applicant_department or '申请'}部门负责人", "users": ["待配置"]}
+        # 根据申请部门查找该部门的负责人
+        if not applicant_department:
+            return {"role_name": "申请部门负责人", "users": []}
+        # 查找该部门的部门负责人（is_department_manager=True）
+        dept_managers = db.query(User).filter(
+            User.department == applicant_department,
+            User.is_department_manager == True,
+            User.is_active == True
+        ).all()
+        if dept_managers:
+            return {
+                "role_name": f"{applicant_department}部门负责人",
+                "users": [u.real_name or u.username for u in dept_managers]
+            }
+        # 如果没有明确标记的部门负责人，查找部门经理角色
+        manager_role = db.query(Role).filter(Role.code == 'department_manager').first()
+        if manager_role:
+            user_roles = db.query(UserRole).filter(UserRole.role_id == manager_role.id).all()
+            user_ids = [ur.user_id for ur in user_roles]
+            users = db.query(User).filter(
+                User.id.in_(user_ids),
+                User.department == applicant_department,
+                User.is_active == True
+            ).all()
+            if users:
+                return {
+                    "role_name": f"{applicant_department}部门负责人",
+                    "users": [u.real_name or u.username for u in users]
+                }
+        return {"role_name": f"{applicant_department}部门负责人", "users": []}
 
     # 根据角色 code 查找角色
     role = db.query(Role).filter(Role.code == approver).first()
@@ -162,8 +231,19 @@ def get_application_workflow_records(
             # 查找该节点的审批记录
             for record in workflow_records:
                 if record.current_node_id == node.get("id"):
-                    # 跳过 start 和 submit 节点，只显示审核节点
-                    if node.get("type") in ["review", "approve"]:
+                    # start、submit 节点：只要有记录就标记为已完成
+                    if node.get("type") in ["start", "submit"]:
+                        if record.actor_id and record.actor_id in user_map:
+                            actor = user_map[record.actor_id]
+                            node_info["actor_name"] = actor.real_name or actor.username
+                            node_info["created_at"] = record.created_at
+                            node_info["status"] = "completed"
+                        # 即使没有 actor_id，只要有记录也标记为已完成
+                        elif record.node_status == 'completed':
+                            node_info["status"] = "completed"
+                            node_info["created_at"] = record.created_at
+                    # 审核节点
+                    elif node.get("type") in ["review", "approve"]:
                         if record.action in ["approve", "reject"]:
                             node_info["status"] = "completed"
                             node_info["action"] = record.action
@@ -173,13 +253,10 @@ def get_application_workflow_records(
                                 actor = user_map[record.actor_id]
                                 node_info["actor"] = record.actor_id
                                 node_info["actor_name"] = actor.real_name or actor.username
-                    elif node.get("type") in ["start", "submit"]:
-                        # 提交节点
-                        if record.actor_id and record.actor_id in user_map:
-                            actor = user_map[record.actor_id]
-                            node_info["actor_name"] = actor.real_name or actor.username
-                            node_info["created_at"] = record.created_at
-                            node_info["status"] = "completed"
+                    # end 节点：只要有记录就标记为已完成
+                    elif node.get("type") == "end":
+                        node_info["status"] = "completed"
+                        node_info["created_at"] = record.created_at
 
             # 添加待处理角色和待审核人员信息
             node_config = node.get('config', {})
@@ -343,8 +420,8 @@ def update_application(
     if not application:
         raise HTTPException(status_code=404, detail="应用场景不存在")
 
-    # 权限检查
-    if application.applicant_id != current_user.id and current_user.role not in ["admin", "reviewer"]:
+    # 权限检查：只有创建者、admin、reviewer 可以编辑
+    if not can_edit_resource(application, current_user, db):
         raise HTTPException(status_code=403, detail="无权限修改此应用场景")
 
     update_data = app_data.model_dump(exclude_unset=True)
@@ -411,7 +488,8 @@ def delete_application(
     if not application:
         raise HTTPException(status_code=404, detail="应用场景不存在")
 
-    if application.applicant_id != current_user.id and current_user.role not in ["admin"]:
+    # 权限检查：只有 admin 或创建者可以删除
+    if not can_delete_resource(application, current_user, db):
         raise HTTPException(status_code=403, detail="无权限删除此应用场景")
 
     db.delete(application)

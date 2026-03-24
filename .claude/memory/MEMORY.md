@@ -1,12 +1,102 @@
 # AI 管理平台 - 项目状态
 
 **更新时间**: 2026-03-24
-**当前版本**: v1.3.0
+**当前版本**: v1.4.0
 **GitHub**: https://github.com/difeizheng/ai_manage_platform
 
 ---
 
-## 最新版本变更 (v1.3.0)
+## 最新版本变更 (v1.4.0)
+
+### 新增功能模块
+
+#### 1. 用户权限增强
+- **忘记密码功能** - 邮箱验证码重置密码（24 小时过期）
+- **个人资料完善** - 个人简介、技能标签、项目经历
+- **头像上传** - 支持 jpg/png/gif/webp，最大 5MB
+- **职位管理** - 职位定义、用户职位分配
+- **部门层级** - 多级部门树形结构
+
+#### 2. 文件管理服务
+- **文件上传** - 白名单校验、大小限制 (100MB)、哈希去重 (SHA256)
+- **文件下载** - 权限控制（上传者/admin/公开）
+- **文件删除** - 软删除模式
+- **文件列表** - 我的文件、公开文件、分页过滤
+
+#### 3. 数据分析与报表
+- **报表管理** - 创建/更新/删除报表，支持 JSON/CSV 导出
+- **趋势分析** - 应用场景、模型、数据集新增趋势
+- **资源分析** - 算力使用情况、部门资源分布
+- **审批效率** - 工作流审批统计
+
+#### 4. 邮件通知
+- **通知设置** - 邮件开关、免打扰时段
+- **邮件发送** - SMTP 发送、模板系统
+- **邮件日志** - 发送记录追踪
+
+### 新增 API 端点
+
+| 模块 | 端点 | 功能 |
+|------|------|------|
+| 用户认证 | `POST /api/auth/forgot-password` | 忘记密码 |
+| 用户认证 | `POST /api/auth/reset-password` | 重置密码 |
+| 用户认证 | `GET/PUT /api/auth/me/profile` | 个人资料 |
+| 用户认证 | `POST /api/auth/me/avatar` | 头像上传 |
+| 用户管理 | `GET/POST /api/users/positions` | 职位管理 |
+| 用户管理 | `GET/POST /api/users/departments` | 部门管理 |
+| 文件管理 | `POST /api/files/upload` | 上传文件 |
+| 文件管理 | `GET /api/files/my` | 我的文件 |
+| 数据分析 | `GET/POST /api/analytics/reports` | 报表管理 |
+| 数据分析 | `GET /api/analytics/trend/*` | 趋势分析 |
+| 通知 | `GET/PUT /api/notification/settings` | 通知设置 |
+| 通知 | `POST /api/notification/send-email` | 发送邮件 |
+
+### 数据库变更
+- 新增 12 个表：
+  - `files` - 文件管理
+  - `email_logs` - 邮件日志
+  - `notification_settings` - 通知设置
+  - `reports` - 报表定义
+  - `report_cache` - 报表数据缓存
+  - `password_reset_tokens` - 密码重置令牌
+  - `user_profiles` - 用户 profile 扩展
+  - `positions` - 职位表
+  - `user_positions` - 用户职位关联
+  - `audit_logs` - 审计日志
+  - `login_logs` - 登录日志
+  - `application_requests` - 资源申请（新增工作流字段）
+
+### 文件变更
+- 新建 `app/api/auth.py` - 扩展忘记密码、个人资料 API
+- 新建 `app/api/users.py` - 用户管理、职位、部门 API
+- 新建 `app/api/files.py` - 文件管理 API
+- 新建 `app/api/analytics.py` - 数据分析 API
+- 更新 `app/api/notification.py` - 扩展邮件通知 API
+- 更新 `app/models/models.py` - 新增 12 个模型类
+- 更新 `app/schemas/schemas.py` - 新增对应 Schema
+- 更新 `app/core/exceptions.py` - 修复 request.path 错误
+- 新建 `migrate.py` - 数据库迁移脚本
+- 新建 `docs/feature_roadmap.md` - 功能规划文档
+
+---
+
+## 上一版本变更 (v1.3.1)
+
+### 新增功能
+- **模型申请工作流** - 申请模型时自动启动工作流审批
+- **智能体申请工作流** - 申请智能体时自动启动工作流审批
+- **算力资源申请工作流** - 申请算力资源时自动启动工作流审批
+- **应用广场申请工作流** - 申请应用时自动启动工作流审批
+
+### 文件变更
+- 更新 `app/api/models.py` - `request_model_access` 函数
+- 更新 `app/api/agents.py` - `request_agent_access` 函数
+- 更新 `app/api/compute.py` - `request_compute_resource` 函数
+- 更新 `app/api/app_store.py` - 新增 `request_app_store_item_access` 函数
+
+---
+
+## 上一版本变更 (v1.3.0)
 
 ### 新增功能
 - **个人工作台** (`/workbench`) - 用户个人首页，汇总我的申请/我的待办/我的通知
@@ -40,6 +130,8 @@
 - JWT Token 认证
 - 登录/登出功能
 - 用户角色权限管理
+- **忘记密码** - 邮箱验证码重置
+- **个人资料** - 简介、技能、项目、头像
 - 测试账号：`admin / admin123`
 
 ### 2. 数据看板 (`/dashboard`)
@@ -55,26 +147,26 @@
 ### 4. 数据集管理 (`/datasets`)
 - 数据集 CRUD
 - 状态管理
-- **数据集申请工作流** - 申请数据集时自动启动工作流审批
+- 数据集申请工作流
 
 ### 5. 模型管理 (`/models`)
 - 模型上传/CRUD
 - 文件上传支持
-- **模型申请工作流** - 申请模型时自动启动工作流审批
+- 模型申请工作流
 
 ### 6. 智能体管理 (`/agents`)
 - 智能体 CRUD
 - 状态管理
-- **智能体申请工作流** - 申请智能体时自动启动工作流审批
+- 智能体申请工作流
 
 ### 7. 算力资源管理 (`/compute`)
 - 资源类型管理
 - 资源分配和调度
-- **算力资源申请工作流** - 申请算力资源时自动启动工作流审批
+- 算力资源申请工作流
 
 ### 8. 应用广场管理 (`/app-store`)
 - 应用发布/CRUD
-- **应用申请工作流** - 申请应用时自动启动工作流审批
+- 应用申请工作流
 
 ### 9. 审批工作流系统
 - 工作流定义和管理
@@ -88,6 +180,22 @@
 ### 11. 通知中心
 - 站内通知管理
 - 通知与用户关联
+- 邮件通知（SMTP）
+
+### 12. 文件管理 (`/api/files`) 🆕
+- 文件上传（白名单、哈希去重）
+- 文件下载/删除
+- 文件列表
+
+### 13. 用户管理 (`/api/users`) 🆕
+- 职位管理
+- 部门管理（树形）
+- 用户列表/详情
+
+### 14. 数据分析 (`/api/analytics`) 🆕
+- 报表管理
+- 趋势分析
+- 资源使用分析
 
 ---
 
@@ -102,6 +210,8 @@
 ## 常用命令
 - 启动服务：`python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 - 初始化数据：`python init_data.py`
+- 数据库迁移：`python migrate.py`
+- 运行测试：`python test_new_api.py`
 
 ---
 

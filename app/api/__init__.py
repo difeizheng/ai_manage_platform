@@ -3,7 +3,11 @@ API 路由汇总
 """
 from fastapi import APIRouter
 
-from app.api import dashboard, applications, datasets, models, agents, app_store, compute, workflow, forum, auth, workflow_def, system, notification, application_requests, resource_workflow
+from app.api import (
+    dashboard, applications, datasets, models, agents, app_store, compute,
+    workflow, forum, auth, workflow_def, system, notification,
+    application_requests, resource_workflow, files, users, analytics, email, websocket
+)
 
 api_router = APIRouter()
 
@@ -22,3 +26,8 @@ api_router.include_router(system.router, prefix="/api/system", tags=["系统配�
 api_router.include_router(notification.router, prefix="/api/notification", tags=["站内通知"])
 api_router.include_router(application_requests.router, prefix="/api/application-requests", tags=["资源申请"])
 api_router.include_router(resource_workflow.router, prefix="/api/resource-workflow", tags=["资源工作流审核"])
+api_router.include_router(files.router, prefix="/api/files", tags=["文件管理"])
+api_router.include_router(users.router, prefix="/api/users", tags=["用户管理"])
+api_router.include_router(analytics.router, prefix="/api/analytics", tags=["数据分析"])
+api_router.include_router(email.router, prefix="/api/email", tags=["邮件通知"])
+api_router.include_router(websocket.router, prefix="/api/ws", tags=["WebSocket"])

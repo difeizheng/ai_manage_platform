@@ -253,11 +253,17 @@
                 <button @click="addNode('approve')" class="px-3 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200 text-sm">
                     <i class="fas fa-check-circle"></i> 审批
                 </button>
-                <button @click="addNode('notify')" class="px-3 py-1 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 text-sm">
-                    <i class="fas fa-bell"></i> 通知
+                <button @click="addNode('parallel')" class="px-3 py-1 bg-teal-100 text-teal-600 rounded hover:bg-teal-200 text-sm">
+                    <i class="fas fa-users"></i> 并行
                 </button>
                 <button @click="addNode('condition')" class="px-3 py-1 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 text-sm">
                     <i class="fas fa-code-branch"></i> 条件
+                </button>
+                <button @click="addNode('cc')" class="px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm">
+                    <i class="fas fa-share-square"></i> 抄送
+                </button>
+                <button @click="addNode('notify')" class="px-3 py-1 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 text-sm">
+                    <i class="fas fa-bell"></i> 通知
                 </button>
                 <div class="border-l border-gray-300 h-6 mx-2"></div>
                 <button @click="saveWorkflow" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -385,7 +391,7 @@
                 <label class="block text-sm font-medium text-gray-700 mb-1">节点名称</label>
                 <input v-model="editingNode.name" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2">
             </div>
-            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve'">
+            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve' || editingNode.type === 'parallel'">
                 <label class="block text-sm font-medium text-gray-700 mb-1">审核人角色</label>
                 <select v-model="editingNode.config.approver" class="w-full border border-gray-300 rounded-lg px-3 py-2">
                     <option value="">请选择审核人角色</option>
@@ -397,17 +403,33 @@
                 </select>
                 <p class="text-xs text-gray-500 mt-1">角色需在"系统配置 - 角色管理"中预先创建并分配给用户</p>
             </div>
-            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve'">
+            <div v-if="editingNode.type === 'review' || editingNode.type === 'approve' || editingNode.type === 'parallel'">
                 <label class="block text-sm font-medium text-gray-700 mb-1">审批方式</label>
                 <select v-model="editingNode.config.approval_type" class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                    <option value="any">任意一人审批即可</option>
-                    <option value="all">所有人审批</option>
+                    <option value="any">或签（任意一人审批即可）</option>
+                    <option value="all">会签（所有人审批）</option>
                 </select>
+                <p class="text-xs text-gray-500 mt-1" v-if="editingNode.type === 'parallel'">
+                    并行节点支持会签或或签：会签需要所有人同意，或签只需一人同意
+                </p>
             </div>
             <div v-if="editingNode.type === 'condition'">
                 <label class="block text-sm font-medium text-gray-700 mb-1">条件表达式</label>
                 <input v-model="editingNode.config.condition" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="如：amount > 10000">
                 <p class="text-xs text-gray-500 mt-1">支持变量：amount(金额), department(部门), priority(优先级)</p>
+                <p class="text-xs text-gray-500">连接线上需设置 condition="true" 或 condition="false" 来表示条件满足/不满足时的路径</p>
+            </div>
+            <div v-if="editingNode.type === 'cc'">
+                <label class="block text-sm font-medium text-gray-700 mb-1">抄送对象</label>
+                <select v-model="editingNode.config.approver" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    <option value="">请选择抄送对象</option>
+                    <option v-for="role in roleList" :key="role.code" :value="role.code">
+                        {{ role.name }} ({{ role.code }})
+                    </option>
+                    <option value="department_head">部门负责人</option>
+                    <option value="applicant_department">申请部门负责人</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">抄送节点只通知不审批，自动流转到下一个节点</p>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">超时设置（小时）</label>
@@ -988,6 +1010,8 @@ createApp({
                 'approve': 'fas fa-check-circle',
                 'notify': 'fas fa-bell',
                 'condition': 'fas fa-code-branch',
+                'parallel': 'fas fa-users',
+                'cc': 'fas fa-share-square',
                 'start': 'fas fa-play-circle',
                 'end': 'fas fa-stop-circle'
             };
@@ -1000,6 +1024,8 @@ createApp({
                 'approve': '#10B981',
                 'notify': '#8B5CF6',
                 'condition': '#EC4899',
+                'parallel': '#14B8A6',
+                'cc': '#6B7280',
                 'start': '#3B82F6',
                 'end': '#6B7280'
             };
@@ -1012,6 +1038,8 @@ createApp({
                 'approve': '审批',
                 'notify': '通知',
                 'condition': '条件',
+                'parallel': '并行',
+                'cc': '抄送',
                 'start': '开始',
                 'end': '结束'
             };

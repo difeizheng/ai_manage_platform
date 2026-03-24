@@ -1,42 +1,68 @@
 """
 模型管理 API
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Any
 import os
 from datetime import datetime
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.models import Model, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition, Notification
-from app.schemas.schemas import ModelCreate, ModelUpdate, ModelResponse, ApplicationRequestCreate
-from app.api.auth import get_current_user
+from app.schemas.schemas import ModelCreate, ModelUpdate, ModelResponse, ApplicationRequestCreate, PaginatedResponse
+from app.api.auth import get_current_user, can_edit_resource, can_delete_resource
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ModelResponse])
+@router.get("/")
 def list_models(
-    skip: int = 0,
-    limit: int = 100,
-    model_type: str = None,
-    framework: str = None,
-    status: str = None,
-    db: Session = Depends(get_db)
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    model_type: Optional[str] = Query(None, description="模型类型"),
+    framework: Optional[str] = Query(None, description="框架"),
+    status: Optional[str] = Query(None, description="状态"),
+    creator: Optional[str] = Query(None, description="创建人（'me' 为当前用户）"),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """获取模型列表"""
+    """获取模型列表 - 支持分页和多条件过滤"""
     query = db.query(Model)
 
+    # 按模型类型过滤
     if model_type:
         query = query.filter(Model.model_type == model_type)
+
+    # 按框架过滤
     if framework:
         query = query.filter(Model.framework == framework)
+
+    # 按状态过滤
     if status:
         query = query.filter(Model.status == status)
 
-    models = query.offset(skip).limit(limit).all()
-    return models
+    # 按创建人过滤
+    if creator == 'me':
+        query = query.filter(Model.creator_id == current_user.id)
+    elif creator and creator.isdigit():
+        query = query.filter(Model.creator_id == int(creator))
+
+    # 关键词搜索（名称或描述）
+    if keyword:
+        query = query.filter(
+            (Model.name.contains(keyword)) |
+            (Model.description.contains(keyword))
+        )
+
+    # 获取总数
+    total = query.count()
+
+    # 分页查询
+    models = query.order_by(Model.created_at.desc()).offset(skip).limit(limit).all()
+
+    return PaginatedResponse.create(items=models, total=total, skip=skip, limit=limit)
 
 
 @router.get("/{model_id}", response_model=ModelResponse)
@@ -156,6 +182,10 @@ def update_model(
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
 
+    # 权限检查：只有创建者、admin、reviewer 可以编辑
+    if not can_edit_resource(model, current_user, db):
+        raise HTTPException(status_code=403, detail="无权限修改此模型")
+
     update_data = model_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(model, key, value)
@@ -176,7 +206,8 @@ def delete_model(
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
 
-    if model.creator_id != current_user.id and current_user.role != "admin":
+    # 权限检查：只有 admin 或创建者可以删除
+    if not can_delete_resource(model, current_user, db):
         raise HTTPException(status_code=403, detail="无权限删除此模型")
 
     # 删除文件

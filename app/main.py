@@ -1,6 +1,7 @@
 """
 AI 管理平台 - 主应用入口
 """
+import logging
 from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,9 +12,22 @@ from typing import Optional
 
 from app.core.config import settings
 from app.core.database import get_db, init_db
+from app.core.exceptions import register_exception_handlers
 from app.api import api_router
 from app.api.auth import get_token_from_request
 from app.models.models import User
+
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("app.log", encoding="utf-8")
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
@@ -36,6 +50,9 @@ app = FastAPI(
     description="人工智能管理平台 - 整合 AI 模型、算力、数据等资源，规范 AI 使用流程",
     version="1.0.0"
 )
+
+# 注册异常处理器
+register_exception_handlers(app)
 
 # CORS
 app.add_middleware(
@@ -133,6 +150,89 @@ async def notifications(request: Request):
     return templates.TemplateResponse("notifications.html", {"request": request})
 
 
+def get_user_approvals_count(db: Session, user: User) -> int:
+    """
+    获取用户的待办审批数量
+    包括：应用场景审批、资源审批（数据集/模型/智能体/算力/应用广场）
+    """
+    from app.models.models import WorkflowRecord, WorkflowDefinition, Notification, Role, UserRole
+    from sqlalchemy import or_
+
+    if not user:
+        return 0
+
+    seen_records = set()
+
+    # 1. 通过通知查找待办（未读的工作流通知）
+    notifications = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.is_read == False,
+        Notification.type == "workflow",
+        Notification.related_type == "workflow_record"
+    ).all()
+
+    for notif in notifications:
+        if notif.related_id:
+            seen_records.add(notif.related_id)
+
+    # 2. 获取用户的所有角色
+    user_roles = db.query(UserRole).filter(UserRole.user_id == user.id).all()
+    role_ids = [ur.role_id for ur in user_roles]
+    role_codes = []
+    if role_ids:
+        roles = db.query(Role).filter(Role.id.in_(role_ids)).all()
+        role_codes = [r.code for r in roles]
+
+    # 3. 查找所有处于审核/审批节点的工作流记录
+    all_records = db.query(WorkflowRecord).join(
+        WorkflowDefinition,
+        WorkflowRecord.workflow_definition_id == WorkflowDefinition.id
+    ).filter(
+        WorkflowRecord.node_status == 'completed'
+    ).all()
+
+    for record in all_records:
+        if record.id in seen_records:
+            continue
+
+        if not record.workflow_definition_id:
+            continue
+
+        definition = db.query(WorkflowDefinition).filter(
+            WorkflowDefinition.id == record.workflow_definition_id
+        ).first()
+        if not definition:
+            continue
+
+        nodes = definition.nodes or []
+        current_node = next((n for n in nodes if n.get('id') == record.current_node_id), None)
+        if not current_node or current_node.get('type') not in ['review', 'approve']:
+            continue
+
+        # 检查当前节点的 approver 是否包含当前用户
+        node_config = current_node.get('config', {})
+        approver = node_config.get('approver')
+
+        should_include = False
+
+        if approver == 'department_head':
+            if user.is_department_manager:
+                should_include = True
+        elif approver == 'applicant_department':
+            if 'department_manager' in role_codes:
+                should_include = True
+        elif approver:
+            if approver in role_codes:
+                should_include = True
+        else:
+            should_include = True
+
+        if should_include:
+            seen_records.add(record.id)
+
+    return len(seen_records)
+
+
 @app.get("/workbench")
 async def workbench(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user_optional)):
     """个人工作台"""
@@ -146,11 +246,10 @@ async def workbench(request: Request, db: Session = Depends(get_db), current_use
     if user_id:
         my_applications_count = db.query(Application).filter(Application.applicant_id == user_id).count()
 
-    # 我的待办数量（简化版，实际应该根据工作流和角色计算）
+    # 我的待办数量（根据工作流和角色计算）
     my_approvals_count = 0
     if user_id:
-        # 这里简化处理，实际应该查询工作流记录
-        pass
+        my_approvals_count = get_user_approvals_count(db, current_user)
 
     # 未读通知数量
     unread_notifications_count = 0

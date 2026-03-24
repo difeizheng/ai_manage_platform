@@ -132,9 +132,9 @@
                             <div class="flex-1">
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">待审批</span>
-                                    <span class="text-sm text-gray-600">{{ item.definition.name if item.definition else "" }}</span>
+                                    <span class="text-sm text-gray-600">{{ item.definition ? item.definition.name : "" }}</span>
                                 </div>
-                                <h4 class="font-medium text-gray-900">{{ item.currentNode.name if item.currentNode else "" }}</h4>
+                                <h4 class="font-medium text-gray-900">{{ item.currentNode ? item.currentNode.name : "" }}</h4>
                                 <p class="text-sm text-gray-500 mt-1">
                                     <i class="fas fa-user mr-1"></i>提交人：<span v-text="item.actor?.real_name || item.actor?.username"></span>
                                     <span class="ml-4"><i class="fas fa-clock mr-1"></i>{{ formatTime(item.record.created_at) }}前</span>
@@ -278,7 +278,7 @@ createApp({
         async loadMyApplications() {
             this.myApplicationsLoading = true;
             try {
-                const data = await apiRequest('/api/applications/my');
+                const data = await apiRequest('/applications/my');
                 this.myApplications = data.items || data;
                 this.my_applications_count = this.myApplications.length;
             } catch (err) {
@@ -290,7 +290,7 @@ createApp({
         async loadMyApprovals() {
             this.myApprovalsLoading = true;
             try {
-                const data = await apiRequest('/api/workflow-def/approvals/my');
+                const data = await apiRequest('/workflow-def/approvals/my');
                 this.myApprovals = data || [];
                 this.my_approvals_count = this.myApprovals.length;
             } catch (err) {
@@ -302,7 +302,7 @@ createApp({
         async loadMyNotifications() {
             this.myNotificationsLoading = true;
             try {
-                const data = await apiRequest('/api/notification/my?limit=10');
+                const data = await apiRequest('/notification/my?limit=10');
                 this.myNotifications = data.items || [];
             } catch (err) {
                 console.error('加载我的通知失败:', err);
@@ -313,11 +313,11 @@ createApp({
         async loadStats() {
             try {
                 // 获取应用场景总数
-                const appData = await apiRequest('/api/applications?limit=1');
+                const appData = await apiRequest('/applications?limit=1');
                 this.applications_total = appData.total || 0;
 
                 // 获取未读通知数
-                const notifData = await apiRequest('/api/notification/my/unread-count');
+                const notifData = await apiRequest('/notification/my/unread-count');
                 this.unread_notifications_count = notifData.unread_count;
             } catch (err) {
                 console.error('加载统计失败:', err);
@@ -325,7 +325,7 @@ createApp({
         },
         async markNotificationAsRead(id) {
             try {
-                await apiRequest(`/api/notification/${id}/read`, { method: 'PUT' });
+                await apiRequest(`/notification/${id}/read`, { method: 'PUT' });
                 const notif = this.myNotifications.find(n => n.id === id);
                 if (notif) notif.is_read = true;
                 this.loadStats();
@@ -337,7 +337,7 @@ createApp({
         async deleteNotification(id) {
             if (!await showConfirm('确定删除该通知吗？')) return;
             try {
-                await apiRequest(`/api/notification/${id}`, { method: 'DELETE' });
+                await apiRequest(`/notification/${id}`, { method: 'DELETE' });
                 this.myNotifications = this.myNotifications.filter(n => n.id !== id);
                 this.loadStats();
                 showSuccess('删除成功');

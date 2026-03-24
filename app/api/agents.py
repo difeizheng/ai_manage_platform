@@ -1,40 +1,66 @@
 """
 智能体管理 API
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
 from app.models.models import Agent, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition, Notification
-from app.schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, ApplicationRequestCreate
-from app.api.auth import get_current_user
+from app.schemas.schemas import AgentCreate, AgentUpdate, AgentResponse, ApplicationRequestCreate, PaginatedResponse
+from app.api.auth import get_current_user, can_edit_resource, can_delete_resource
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[AgentResponse])
+@router.get("/")
 def list_agents(
-    skip: int = 0,
-    limit: int = 100,
-    agent_type: str = None,
-    business_domain: str = None,
-    status: str = None,
-    db: Session = Depends(get_db)
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    agent_type: Optional[str] = Query(None, description="智能体类型"),
+    business_domain: Optional[str] = Query(None, description="业务领域"),
+    status: Optional[str] = Query(None, description="状态"),
+    creator: Optional[str] = Query(None, description="创建人（'me' 为当前用户）"),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """获取智能体列表"""
+    """获取智能体列表 - 支持分页和多条件过滤"""
     query = db.query(Agent)
 
+    # 按智能体类型过滤
     if agent_type:
         query = query.filter(Agent.agent_type == agent_type)
+
+    # 按业务领域过滤
     if business_domain:
         query = query.filter(Agent.business_domain == business_domain)
+
+    # 按状态过滤
     if status:
         query = query.filter(Agent.status == status)
 
-    agents = query.offset(skip).limit(limit).all()
-    return agents
+    # 按创建人过滤
+    if creator == 'me':
+        query = query.filter(Agent.creator_id == current_user.id)
+    elif creator and creator.isdigit():
+        query = query.filter(Agent.creator_id == int(creator))
+
+    # 关键词搜索（名称或描述）
+    if keyword:
+        query = query.filter(
+            (Agent.name.contains(keyword)) |
+            (Agent.description.contains(keyword))
+        )
+
+    # 获取总数
+    total = query.count()
+
+    # 分页查询
+    agents = query.order_by(Agent.created_at.desc()).offset(skip).limit(limit).all()
+
+    return PaginatedResponse.create(items=agents, total=total, skip=skip, limit=limit)
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
@@ -129,6 +155,10 @@ def update_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="智能体不存在")
 
+    # 权限检查：只有创建者、admin、reviewer 可以编辑
+    if not can_edit_resource(agent, current_user, db):
+        raise HTTPException(status_code=403, detail="无权限修改此智能体")
+
     update_data = agent_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(agent, key, value)
@@ -149,7 +179,8 @@ def delete_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="智能体不存在")
 
-    if agent.creator_id != current_user.id and current_user.role != "admin":
+    # 权限检查：只有 admin 或创建者可以删除
+    if not can_delete_resource(agent, current_user, db):
         raise HTTPException(status_code=403, detail="无权限删除此智能体")
 
     db.delete(agent)

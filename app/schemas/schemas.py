@@ -1,7 +1,7 @@
 """
 Pydantic Schemas 定义
 """
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -541,6 +541,217 @@ class DepartmentResponse(DepartmentBase):
     children: Optional[list["DepartmentResponse"]] = []
     manager: Optional[UserResponse] = None
     member_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+# ============ 分页响应 ============
+class PaginatedResponse(BaseModel):
+    """通用分页响应"""
+    items: List[Any]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool = False
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+
+    @classmethod
+    def create(cls, items: list, total: int, skip: int, limit: int):
+        return cls(
+            items=items,
+            total=total,
+            skip=skip,
+            limit=limit,
+            has_more=skip + len(items) < total
+        )
+
+
+# ============ 文件管理 ============
+class FileBase(BaseModel):
+    filename: str
+    file_category: Optional[str] = None
+    related_type: Optional[str] = None
+    related_id: Optional[int] = None
+    is_public: bool = False
+
+
+class FileCreate(FileBase):
+    pass
+
+
+class FileUpdate(BaseModel):
+    filename: Optional[str] = None
+    file_category: Optional[str] = None
+    is_public: Optional[bool] = None
+
+
+class FileResponse(FileBase):
+    id: int
+    stored_name: str
+    file_path: str
+    file_size: int
+    file_type: Optional[str] = None
+    file_hash: Optional[str] = None
+    uploader_id: int
+    download_count: int
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============ 邮件通知 ============
+class EmailLogBase(BaseModel):
+    recipient: str
+    subject: str
+    content: str
+    template_name: Optional[str] = None
+
+
+class EmailLogResponse(EmailLogBase):
+    id: int
+    status: str
+    error_message: Optional[str] = None
+    sent_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationSettingBase(BaseModel):
+    enable_email: bool = True
+    enable_workflow_email: bool = True
+    enable_system_email: bool = True
+    quiet_start: Optional[str] = None
+    quiet_end: Optional[str] = None
+
+
+class NotificationSettingCreate(NotificationSettingBase):
+    pass
+
+
+class NotificationSettingResponse(NotificationSettingBase):
+    id: int
+    user_id: int
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============ 数据分析与报表 ============
+class ReportBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    report_type: str = "table"
+    config: Optional[Dict[str, Any]] = None
+    is_public: bool = False
+
+
+class ReportCreate(ReportBase):
+    pass
+
+
+class ReportUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    report_type: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+    is_public: Optional[bool] = None
+
+
+class ReportResponse(ReportBase):
+    id: int
+    created_by: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============ 用户权限增强 ============
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+class UserProfileBase(BaseModel):
+    bio: Optional[str] = None
+    skills: Optional[List[str]] = None
+    projects: Optional[List[Dict[str, Any]]] = None
+    phone_public: bool = False
+    email_public: bool = False
+
+
+class UserProfileCreate(UserProfileBase):
+    pass
+
+
+class UserProfileUpdate(UserProfileBase):
+    avatar_path: Optional[str] = None
+
+
+class UserProfileResponse(UserProfileBase):
+    id: int
+    user_id: int
+    avatar_path: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PositionBase(BaseModel):
+    name: str
+    code: str
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    is_active: bool = True
+
+
+class PositionCreate(PositionBase):
+    pass
+
+
+class PositionUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class PositionResponse(PositionBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserPositionAssign(BaseModel):
+    position_id: int
+    department_id: Optional[int] = None
+    is_primary: bool = True
+
+
+class UserPositionResponse(BaseModel):
+    id: int
+    user_id: int
+    position_id: int
+    department_id: Optional[int] = None
+    is_primary: bool
+    assigned_at: datetime
 
     class Config:
         from_attributes = True

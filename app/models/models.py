@@ -263,7 +263,8 @@ class WorkflowNode:
     APPROVE = "approve"  # 审批节点
     NOTIFY = "notify"  # 通知节点
     CONDITION = "condition"  # 条件分支
-    PARALLEL = "parallel"  # 并行节点
+    PARALLEL = "parallel"  # 并行节点（会签/或签）
+    CC = "cc"  # 抄送节点（只通知不审批）
 
 
 class WorkflowRecord(Base):
@@ -422,6 +423,206 @@ class Department(Base):
     parent = relationship("Department", remote_side=[id], backref="children")
     manager = relationship("User", foreign_keys=[manager_id], backref="managed_department")
     members = relationship("User", foreign_keys="User.department_id", back_populates="department_rel")
+
+
+# ============ 审计日志 ============
+class AuditLog(Base):
+    """审计日志表 - 记录用户操作"""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 操作人 ID
+    username = Column(String(50))  # 操作人用户名（冗余存储，便于查询）
+    action = Column(String(50), nullable=False)  # 操作类型：CREATE, UPDATE, DELETE, LOGIN, EXPORT 等
+    resource_type = Column(String(50))  # 资源类型：application, dataset, model, agent 等
+    resource_id = Column(Integer)  # 资源 ID
+    resource_name = Column(String(200))  # 资源名称（冗余存储）
+    ip_address = Column(String(50))  # 操作 IP
+    user_agent = Column(String(500))  # 用户代理
+    extra_data = Column(JSON)  # 额外数据（如修改前后的值）
+    status = Column(String(20), default="success")  # 操作状态：success, failed
+    error_message = Column(Text)  # 错误信息（如果失败）
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # 关联
+    user = relationship("User", backref="audit_logs")
+
+
+# ============ 登录日志 ============
+class LoginLog(Base):
+    """登录日志表 - 记录用户登录行为"""
+    __tablename__ = "login_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), nullable=False)  # 用户名
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 用户 ID
+    login_ip = Column(String(50))  # 登录 IP
+    user_agent = Column(String(500))  # 用户代理
+    status = Column(String(20), default="success")  # 登录状态：success, failed
+    error_message = Column(Text)  # 错误信息
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============ 文件管理 ============
+class File(Base):
+    """文件表 - 统一文件管理"""
+    __tablename__ = "files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)  # 原始文件名
+    stored_name = Column(String(255), nullable=False)  # 存储文件名（UUID）
+    file_path = Column(String(500), nullable=False)  # 文件路径
+    file_size = Column(Integer, default=0)  # 文件大小 (字节)
+    file_type = Column(String(50))  # 文件类型 (mime)
+    file_category = Column(String(50))  # 业务分类 (model, dataset, image, etc.)
+    file_hash = Column(String(64))  # 文件 hash（用于去重）
+    uploader_id = Column(Integer, ForeignKey("users.id"))  # 上传人
+    related_type = Column(String(50))  # 关联类型 (model, dataset, application 等)
+    related_id = Column(Integer)  # 关联 ID
+    download_count = Column(Integer, default=0)  # 下载次数
+    is_public = Column(Boolean, default=False)  # 是否公开
+    status = Column(String(20), default="active")  # active, deleted, archived
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    uploader = relationship("User", backref="uploaded_files")
+
+
+# ============ 邮件通知 ============
+class EmailLog(Base):
+    """邮件发送记录表"""
+    __tablename__ = "email_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient = Column(String(100), nullable=False)  # 收件人
+    subject = Column(String(255), nullable=False)  # 邮件主题
+    content = Column(Text, nullable=False)  # 邮件内容
+    template_name = Column(String(100))  # 邮件模板名称
+    status = Column(String(20), default="pending")  # pending, sent, failed
+    error_message = Column(Text)  # 错误信息
+    sent_at = Column(DateTime(timezone=True))  # 发送时间
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NotificationSetting(Base):
+    """用户通知设置表"""
+    __tablename__ = "notification_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    enable_email = Column(Boolean, default=True)  # 是否启用邮件通知
+    enable_workflow_email = Column(Boolean, default=True)  # 工作流邮件通知
+    enable_system_email = Column(Boolean, default=True)  # 系统通知邮件
+    quiet_start = Column(String(5))  # 免打扰开始时间 (HH:mm)
+    quiet_end = Column(String(5))  # 免打扰结束时间 (HH:mm)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    user = relationship("User", backref="notification_settings")
+
+
+# ============ 数据分析与报表 ============
+class Report(Base):
+    """报表定义表"""
+    __tablename__ = "reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)  # 报表名称
+    description = Column(Text)  # 报表描述
+    report_type = Column(String(50), default="table")  # table, chart, pivot
+    config = Column(JSON)  # 报表配置
+    created_by = Column(Integer, ForeignKey("users.id"))
+    is_public = Column(Boolean, default=False)  # 是否公开
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class ReportCache(Base):
+    """报表数据缓存表"""
+    __tablename__ = "report_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("reports.id"), nullable=False)
+    cache_key = Column(String(100), nullable=False, index=True)
+    cache_data = Column(JSON)  # 缓存数据
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # 关联
+    report = relationship("Report", backref="caches")
+
+
+# ============ 用户权限增强 ============
+class PasswordResetToken(Base):
+    """密码重置令牌表"""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token = Column(String(100), unique=True, nullable=False, index=True)
+    email = Column(String(100), nullable=False)  # 请求重置的邮箱
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # 关联
+    user = relationship("User", backref="password_reset_tokens")
+
+
+class UserProfile(Base):
+    """用户 Profile 扩展表"""
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    avatar_path = Column(String(500))  # 头像路径
+    bio = Column(Text)  # 个人简介
+    skills = Column(JSON)  # 技能标签 ["Python", "Machine Learning"]
+    projects = Column(JSON)  # 项目经历 [{name, role, description}]
+    phone_public = Column(Boolean, default=False)  # 是否公开手机号
+    email_public = Column(Boolean, default=False)  # 是否公开邮箱
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    user = relationship("User", backref="profile")
+
+
+class Position(Base):
+    """职位表"""
+    __tablename__ = "positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)  # 职位名称
+    code = Column(String(50), unique=True, nullable=False)  # 职位编码
+    description = Column(Text)  # 职位描述
+    parent_id = Column(Integer, ForeignKey("positions.id"))  # 上级职位
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # 关联
+    parent = relationship("Position", remote_side=[id], backref="children")
+
+
+class UserPosition(Base):
+    """用户职位关联表"""
+    __tablename__ = "user_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    position_id = Column(Integer, ForeignKey("positions.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"))
+    is_primary = Column(Boolean, default=True)  # 是否主要职位
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # 关联
+    user = relationship("User", backref="positions")
+    position = relationship("Position", backref="users")
+    department = relationship("Department", backref="user_positions")
 
 
 # 更新 User 模型，添加部门关联

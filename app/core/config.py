@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./data/uploads"
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
 
+    # 邮件配置
+    MAIL_SERVER: str = "smtp.example.com"
+    MAIL_PORT: int = 587
+    MAIL_USE_TLS: bool = True
+    MAIL_USERNAME: str = ""
+    MAIL_PASSWORD: str = ""
+    MAIL_DEFAULT_SENDER: str = "noreply@example.com"
+
     class Config:
         env_file = ".env"
 

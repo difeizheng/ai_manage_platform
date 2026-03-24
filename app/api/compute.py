@@ -1,37 +1,58 @@
 """
 算力资源管理 API
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db
 from app.models.models import ComputeResource, User, ApplicationRequest, WorkflowRecord, WorkflowDefinition, Notification
-from app.schemas.schemas import ComputeResourceCreate, ComputeResourceResponse, ApplicationRequestCreate
+from app.schemas.schemas import ComputeResourceCreate, ComputeResourceResponse, ApplicationRequestCreate, PaginatedResponse
 from app.api.auth import get_current_user
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ComputeResourceResponse])
+@router.get("/")
 def list_compute_resources(
-    skip: int = 0,
-    limit: int = 100,
-    resource_type: str = None,
-    status: str = None,
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页记录数"),
+    resource_type: Optional[str] = Query(None, description="资源类型"),
+    status: Optional[str] = Query(None, description="状态"),
+    owner_department: Optional[str] = Query(None, description="所属部门"),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
     db: Session = Depends(get_db)
 ):
-    """获取算力资源列表"""
+    """获取算力资源列表 - 支持分页和多条件过滤"""
     query = db.query(ComputeResource)
 
+    # 按资源类型过滤
     if resource_type:
         query = query.filter(ComputeResource.resource_type == resource_type)
+
+    # 按状态过滤
     if status:
         query = query.filter(ComputeResource.status == status)
 
-    resources = query.offset(skip).limit(limit).all()
-    return resources
+    # 按所属部门过滤
+    if owner_department:
+        query = query.filter(ComputeResource.owner_department == owner_department)
+
+    # 关键词搜索（名称或型号）
+    if keyword:
+        query = query.filter(
+            (ComputeResource.name.contains(keyword)) |
+            (ComputeResource.model_name.contains(keyword))
+        )
+
+    # 获取总数
+    total = query.count()
+
+    # 分页查询
+    resources = query.order_by(ComputeResource.created_at.desc()).offset(skip).limit(limit).all()
+
+    return PaginatedResponse.create(items=resources, total=total, skip=skip, limit=limit)
 
 
 @router.get("/{resource_id}", response_model=ComputeResourceResponse)

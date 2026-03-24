@@ -175,7 +175,7 @@ createApp({
     methods: {
         async loadCurrentUser() {
             try {
-                const user = await apiRequest('/api/auth/me');
+                const user = await apiRequest('/auth/me');
                 this.currentUser = user;
             } catch (e) {
                 this.currentUser = null;
@@ -223,7 +223,7 @@ createApp({
         },
         async viewDetail(id) {
             try {
-                const post = await apiRequest('/api/forum/' + id);
+                const post = await apiRequest('/forum/' + id);
                 this.currentPost = post;
                 this.showPostDetail = true;
                 this.loadComments(id);

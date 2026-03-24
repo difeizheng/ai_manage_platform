@@ -96,7 +96,29 @@
       "Bash(powershell \"Stop-Process -Id 30408 -Force\" 2>&1)",
       "Bash(START /B python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1)",
       "Bash(powershell \"Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }\" 2>&1)",
-      "Bash(grep -r \"verbatim\" templates/*.html)"
+      "Bash(grep -r \"verbatim\" templates/*.html)",
+      "Bash(powershell \"Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_-Force }\")",
+      "Bash(powershell -Command \"Stop-Process -Id 20848 -Force\")",
+      "Bash(start python:*)",
+      "Bash(ls -la D:/project_room/workspace2024/nantian/sx-ai/ai_manage_platform/*.db)",
+      "Bash(dir D:project_roomworkspace2024nantiansx-aiai_manage_platform*.db)",
+      "Bash(find D:/project_room/workspace2024/nantian/sx-ai/ai_manage_platform -name \"*.pyc\" -delete)",
+      "Bash(find D:/project_room/workspace2024/nantian/sx-ai/ai_manage_platform -name \"__pycache__\" -type d -exec rm -rf {} +)",
+      "Bash(powershell -Command 'Stop-Process -Id 20848,9704 -Force')",
+      "Bash(findstr \"uvicorn\")",
+      "Bash(powershell -Command \"Get-Process python | Where-Object {$_.Path -like '*project_room*'} | Stop-Process -Force\" 2>&1)",
+      "Bash(Get-Process -Name python -ErrorAction SilentlyContinue)",
+      "Bash(ForEach-Object { $_d })",
+      "Bash(powershell -Command \"Stop-Process -Id 9704,20848 -Force; Stop-Process -Name python -Force\" 2>&1)",
+      "Bash(powershell -Command \"Stop-Process -Id 16940 -Force\")",
+      "Bash(cmd /c \"taskkill /PID 11548 /F\")",
+      "Bash(Get-Process -Id 11548)",
+      "Bash(Stop-Process -Force)",
+      "Bash(cmd //c \"taskkill //F //PID 11548\")",
+      "Bash(cmd.exe /c \"taskkill /F /PID 11548\")",
+      "Bash(powershell -Command \"Stop-Process -Id 11548 -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Id 28080,11548 -Force\")",
+      "Bash(findstr :8001)"
     ]
   }
 }
