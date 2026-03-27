@@ -2,7 +2,7 @@
 Pydantic Schemas 定义
 """
 from pydantic import BaseModel, EmailStr, ConfigDict
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TypeVar, Generic
 from datetime import datetime
 
 
@@ -547,15 +547,17 @@ class DepartmentResponse(DepartmentBase):
 
 
 # ============ 分页响应 ============
-class PaginatedResponse(BaseModel):
+T = TypeVar('T')
+
+class PaginatedResponse(BaseModel, Generic[T]):
     """通用分页响应"""
-    items: List[Any]
+    items: List[T]
     total: int
     skip: int
     limit: int
     has_more: bool = False
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def create(cls, items: list, total: int, skip: int, limit: int):

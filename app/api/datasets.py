@@ -25,7 +25,7 @@ def list_datasets(
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
-):
+) -> PaginatedResponse[DatasetResponse]:
     """获取数据集列表 - 支持分页和多条件过滤"""
     query = db.query(Dataset)
 

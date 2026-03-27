@@ -378,7 +378,7 @@ class UserRole(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)  # 过期时间（可选）
 
     # 关联
-    user = relationship("User", foreign_keys=[user_id], backref="user_roles")
+    user = relationship("User", foreign_keys=[user_id], back_populates="assigned_roles")
     role = relationship("Role", backref="role_users")
     assigner = relationship("User", foreign_keys=[assigned_by])
 
