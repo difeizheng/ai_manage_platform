@@ -1,8 +1,75 @@
-# AI 管理平台 - 项目状态
+---
+name: 2026-04-02 Bug 修复
+description: 应用场景列表显示、站内通知页面、工作流审批问题修复
+type: feedback
+---
 
-**更新时间**: 2026-03-24
-**当前版本**: v1.4.0
-**GitHub**: https://github.com/difeizheng/ai_manage_platform
+## 2026-04-02 Bug 修复记录
+
+### 问题 1: 应用场景列表不显示数据
+
+**现象**: 访问 `/applications` 页面，列表无数据
+
+**根本原因**:
+1. API 返回 `PaginatedResponse` 格式（包含 `items`、`total` 等字段），前端直接赋值 `data` 而非 `data.items`
+2. `PaginatedResponse.create()` 方法传入 SQLAlchemy 模型，Pydantic 无法序列化
+
+**修复方案**:
+1. 前端：`this.applications = data.items || data;`
+2. 后端：使用 `PaginatedResponse[ApplicationResponse].model_validate({...})` 指定泛型类型
+
+**涉及文件**:
+- `templates/applications.html` - 第 386 行
+- `app/api/applications.py` - 第 80-85 行
+
+---
+
+### 问题 2: 站内通知页面 500 错误
+
+**现象**: 访问 `/notifications` 页面报 500 错误
+
+**根本原因**:
+1. 模态框在 `{% endraw %}` 标签外，Vue.js 语法 `{{ selectedItem?.title }}` 被 Jinja2 解析
+2. `{{ }}` 中的 `?.` 可选链语法导致 Jinja2 报错 `unexpected char '?'`
+3. API 路径错误：前端使用 `/notification/my` 但实际是 `/api/notification/my`
+4. 多余的 `</div>` 闭合标签
+
+**修复方案**:
+1. 模态框移入 `{% raw %}` 标签内
+2. `{{ x?.y }}` 改为 `v-text="x ? x.y : ''"`
+3. 所有 API 路径添加 `/api` 前缀
+4. 移除多余的 `</div>`
+
+**涉及文件**:
+- `templates/notifications.html` - 整体重构
+
+---
+
+### 问题 3: 工作流审批失败
+
+**现象**: 点击"通过"提交审批，弹框提示"请稍后重试或联系管理员"
+
+**根本原因**: `log_action()` 调用时传入 `user=current_user` 但函数参数是 `user_id` 和 `username`
+
+**修复方案**: 
+```python
+log_action(
+    db=db,
+    user_id=current_user.id,
+    username=current_user.username,
+    # ...
+)
+```
+
+**涉及文件**:
+- `app/api/workflow_def.py` - 第 961-969 行
+
+---
+
+### 版本信息
+- **Tag**: v1.4.1
+- **Commit**: 7618ebd
+
 
 ---
 
@@ -10,73 +77,77 @@
 
 ### 新增功能模块
 
-#### 1. 用户权限增强
-- **忘记密码功能** - 邮箱验证码重置密码（24 小时过期）
-- **个人资料完善** - 个人简介、技能标签、项目经历
-- **头像上传** - 支持 jpg/png/gif/webp，最大 5MB
-- **职位管理** - 职位定义、用户职位分配
-- **部门层级** - 多级部门树形结构
+#### 1. 邮件通知服务
+- **邮件发送** - SMTP 发送、HTML 模板渲染
+- **审批结果邮件** - 美观的审批通过/拒绝邮件模板
+- **工作流通知邮件** - 待办审批通知邮件
+- **邮件设置** - 用户可配置邮件开关、免打扰时段
+- **邮件日志** - 发送记录追踪（成功/失败状态）
 
-#### 2. 文件管理服务
+#### 2. WebSocket 实时通知
+- **实时连接** - JWT 认证的 WebSocket 端点
+- **连接管理器** - 支持多端连接、在线状态管理
+- **心跳机制** - 客户端心跳保活
+- **实时推送** - 审批通知、系统通知实时送达
+- **在线用户** - 获取在线用户列表 API
+
+#### 3. 工作流通知集成
+- **启动通知** - 工作流启动时通知审核人
+- **节点通知** - 审核/审批节点通知（普通、并行、条件分支）
+- **抄送通知** - 抄送节点自动通知
+- **结果通知** - 审批通过/拒绝时通知申请人
+- **多渠道通知** - 站内通知 + WebSocket + 邮件
+
+#### 4. 文件管理服务 🆕
 - **文件上传** - 白名单校验、大小限制 (100MB)、哈希去重 (SHA256)
 - **文件下载** - 权限控制（上传者/admin/公开）
 - **文件删除** - 软删除模式
 - **文件列表** - 我的文件、公开文件、分页过滤
 
-#### 3. 数据分析与报表
+#### 5. 数据分析与报表 🆕
 - **报表管理** - 创建/更新/删除报表，支持 JSON/CSV 导出
 - **趋势分析** - 应用场景、模型、数据集新增趋势
 - **资源分析** - 算力使用情况、部门资源分布
 - **审批效率** - 工作流审批统计
 
-#### 4. 邮件通知
-- **通知设置** - 邮件开关、免打扰时段
-- **邮件发送** - SMTP 发送、模板系统
-- **邮件日志** - 发送记录追踪
-
 ### 新增 API 端点
 
 | 模块 | 端点 | 功能 |
 |------|------|------|
-| 用户认证 | `POST /api/auth/forgot-password` | 忘记密码 |
-| 用户认证 | `POST /api/auth/reset-password` | 重置密码 |
-| 用户认证 | `GET/PUT /api/auth/me/profile` | 个人资料 |
-| 用户认证 | `POST /api/auth/me/avatar` | 头像上传 |
-| 用户管理 | `GET/POST /api/users/positions` | 职位管理 |
-| 用户管理 | `GET/POST /api/users/departments` | 部门管理 |
+| 邮件通知 | `GET /api/email/settings` | 获取邮件设置 |
+| 邮件通知 | `PUT /api/email/settings` | 更新邮件设置 |
+| 邮件通知 | `POST /api/email/test` | 发送测试邮件 |
+| 邮件通知 | `GET /api/email/logs` | 邮件发送记录 |
+| WebSocket | `GET /api/ws/notifications` | WebSocket 通知端点 |
+| WebSocket | `GET /api/ws/online-users` | 在线用户列表 |
 | 文件管理 | `POST /api/files/upload` | 上传文件 |
+| 文件管理 | `GET /api/files/{id}` | 下载文件 |
+| 文件管理 | `DELETE /api/files/{id}` | 删除文件 |
 | 文件管理 | `GET /api/files/my` | 我的文件 |
-| 数据分析 | `GET/POST /api/analytics/reports` | 报表管理 |
+| 数据分析 | `GET /api/analytics/reports` | 报表列表 |
+| 数据分析 | `POST /api/analytics/reports` | 创建报表 |
 | 数据分析 | `GET /api/analytics/trend/*` | 趋势分析 |
-| 通知 | `GET/PUT /api/notification/settings` | 通知设置 |
-| 通知 | `POST /api/notification/send-email` | 发送邮件 |
-
-### 数据库变更
-- 新增 12 个表：
-  - `files` - 文件管理
-  - `email_logs` - 邮件日志
-  - `notification_settings` - 通知设置
-  - `reports` - 报表定义
-  - `report_cache` - 报表数据缓存
-  - `password_reset_tokens` - 密码重置令牌
-  - `user_profiles` - 用户 profile 扩展
-  - `positions` - 职位表
-  - `user_positions` - 用户职位关联
-  - `audit_logs` - 审计日志
-  - `login_logs` - 登录日志
-  - `application_requests` - 资源申请（新增工作流字段）
+| 数据分析 | `GET /api/analytics/resource/*` | 资源分析 |
+| 数据分析 | `GET /api/analytics/workflow/*` | 审批效率 |
 
 ### 文件变更
-- 新建 `app/api/auth.py` - 扩展忘记密码、个人资料 API
-- 新建 `app/api/users.py` - 用户管理、职位、部门 API
+- 新建 `app/core/mail.py` - 邮件服务核心模块
+- 新建 `app/api/email.py` - 邮件通知 API
+- 新建 `app/api/websocket.py` - WebSocket 实时通知
 - 新建 `app/api/files.py` - 文件管理 API
 - 新建 `app/api/analytics.py` - 数据分析 API
-- 更新 `app/api/notification.py` - 扩展邮件通知 API
-- 更新 `app/models/models.py` - 新增 12 个模型类
-- 更新 `app/schemas/schemas.py` - 新增对应 Schema
-- 更新 `app/core/exceptions.py` - 修复 request.path 错误
-- 新建 `migrate.py` - 数据库迁移脚本
-- 新建 `docs/feature_roadmap.md` - 功能规划文档
+- 更新 `app/api/workflow_def.py` - 集成邮件和 WebSocket 通知
+- 更新 `app/api/__init__.py` - 注册新路由
+- 更新 `app/schemas/schemas.py` - 修复 ConfigDict 导入
+- 新建 `.env.example` - 环境变量配置示例
+- 新建 `NOTIFICATION_FEATURES.md` - 功能使用说明
+
+### 数据库变更
+- 新增 `email_logs` 表 - 邮件发送日志
+- 新增 `notification_settings` 表 - 用户通知设置
+- 新增 `files` 表 - 文件元数据
+- 新增 `reports` 表 - 报表定义
+- 新增 `report_cache` 表 - 报表数据缓存
 
 ---
 
@@ -180,7 +251,9 @@
 ### 11. 通知中心
 - 站内通知管理
 - 通知与用户关联
-- 邮件通知（SMTP）
+- 邮件通知（SMTP）🆕
+- WebSocket 实时通知 🆕
+- 通知设置（免打扰时段）
 
 ### 12. 文件管理 (`/api/files`) 🆕
 - 文件上传（白名单、哈希去重）
@@ -212,6 +285,32 @@
 - 初始化数据：`python init_data.py`
 - 数据库迁移：`python migrate.py`
 - 运行测试：`python test_new_api.py`
+- 邮件配置：复制 `.env.example` 为 `.env` 并配置 SMTP 参数
+
+## 邮件配置示例
+
+```env
+MAIL_SERVER=smtp.example.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-email@example.com
+MAIL_PASSWORD=your-password
+MAIL_DEFAULT_SENDER=noreply@example.com
+```
+
+## WebSocket 前端连接示例
+
+```javascript
+const token = localStorage.getItem('token');
+const ws = new WebSocket(`ws://localhost:8000/api/ws/notifications?token=${token}`);
+
+ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === 'notification') {
+        // 显示通知
+    }
+};
+```
 
 ---
 
