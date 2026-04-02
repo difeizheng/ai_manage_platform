@@ -960,7 +960,8 @@ async def perform_action(
     # 记录审计日志
     log_action(
         db=db,
-        user=current_user,
+        user_id=current_user.id,
+        username=current_user.username,
         action="WORKFLOW_APPROVE",
         resource_type="workflow",
         resource_id=definition_id,

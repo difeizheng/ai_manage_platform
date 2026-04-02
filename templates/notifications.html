@@ -6,6 +6,7 @@
 
 {% block content %}
 <div id="app" class="space-y-6">
+{% raw %}
     <!-- 统计卡片 -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div class="bg-white rounded-xl shadow-sm p-6">
@@ -163,50 +164,51 @@
             </div>
         </div>
     </div>
-</div>
 
-<!-- 通知详情模态框 -->
-<div v-if="showDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-            <h3 class="text-lg font-semibold">{{ selectedItem?.title }}</h3>
-            <button @click="showDetailModal = false" class="text-gray-400 hover:text-gray-600">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="p-6">
-            <div class="flex items-center gap-3 mb-4">
-                <span class="text-xs px-2 py-1 rounded" :class="getTypeClass(selectedItem?.type)">
-                    {{ getTypeName(selectedItem?.type) }}
-                </span>
-                <span class="text-xs text-gray-400">{{ formatTime(selectedItem?.created_at) }}</span>
-                <span v-if="selectedItem?.is_read" class="text-xs text-green-600">已读</span>
-                <span v-else class="text-xs text-blue-600">未读</span>
+    <!-- 通知详情模态框 -->
+    <div v-if="showDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-lg font-semibold" v-text="selectedItem ? selectedItem.title : ''"></h3>
+                <button @click="showDetailModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-            <div class="prose max-w-none">
-                <p class="text-gray-700 whitespace-pre-line">{{ selectedItem?.content }}</p>
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="text-xs px-2 py-1 rounded" :class="getTypeClass(selectedItem ? selectedItem.type : '')">
+                        <span v-text="getTypeName(selectedItem ? selectedItem.type : '')"></span>
+                    </span>
+                    <span class="text-xs text-gray-400" v-text="formatTime(selectedItem ? selectedItem.created_at : '')"></span>
+                    <span v-if="selectedItem && selectedItem.is_read" class="text-xs text-green-600">已读</span>
+                    <span v-else class="text-xs text-blue-600">未读</span>
+                </div>
+                <div class="prose max-w-none">
+                    <p class="text-gray-700 whitespace-pre-line" v-text="selectedItem ? selectedItem.content : ''"></p>
+                </div>
+                <div v-if="selectedItem && selectedItem.related_type && selectedItem.related_id" class="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <p class="text-sm text-gray-500 mb-2">关联信息</p>
+                    <p class="text-sm">
+                        <span class="text-gray-600">类型：</span>
+                        <span class="font-medium" v-text="selectedItem.related_type"></span>
+                    </p>
+                    <p class="text-sm">
+                        <span class="text-gray-600">ID：</span>
+                        <span class="font-medium" v-text="selectedItem.related_id"></span>
+                    </p>
+                </div>
             </div>
-            <div v-if="selectedItem?.related_type && selectedItem?.related_id" class="mt-6 p-4 bg-gray-50 rounded-lg">
-                <p class="text-sm text-gray-500 mb-2">关联信息</p>
-                <p class="text-sm">
-                    <span class="text-gray-600">类型：</span>
-                    <span class="font-medium">{{ selectedItem.related_type }}</span>
-                </p>
-                <p class="text-sm">
-                    <span class="text-gray-600">ID：</span>
-                    <span class="font-medium">{{ selectedItem.related_id }}</span>
-                </p>
+            <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
+                <button @click="showDetailModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">关闭</button>
+                <button v-if="selectedItem && !selectedItem.is_read" @click="markAsReadAndClose"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    标记为已读
+                </button>
             </div>
-        </div>
-        <div class="p-6 border-t border-gray-200 flex justify-end gap-3">
-            <button @click="showDetailModal = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">关闭</button>
-            <button v-if="selectedItem && !selectedItem.is_read" @click="markAsReadAndClose"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                标记为已读
-            </button>
         </div>
     </div>
 </div>
+{% endraw %}
 {% endblock %}
 
 {% block extra_js %}
@@ -243,13 +245,18 @@ createApp({
         async loadNotifications() {
             this.loading = true;
             try {
-                let url = `/notification/my?skip=${this.skip}&limit=${this.limit}`;
+                let url = `/api/notification/my?skip=${this.skip}&limit=${this.limit}`;
                 if (this.filterType) url += `&type=${this.filterType}`;
                 if (this.filterRead) url += `&is_read=${this.filterRead}`;
 
-                const data = await apiRequest(url);
+                const token = localStorage.getItem('token');
+                const res = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await res.json();
                 this.notifications = data.items || [];
                 this.total = data.total || 0;
+                this.unread_count = data.unread_count || 0;
             } catch (err) {
                 console.error('加载通知失败:', err);
                 showError('加载通知失败');
@@ -259,82 +266,144 @@ createApp({
         },
         async loadStats() {
             try {
-                // 获取未读数量
-                const unreadData = await apiRequest('/notification/my/unread-count');
-                this.unread_count = unreadData.unread_count;
-
-                // 获取工作流通知数量
-                const workflowData = await apiRequest('/notification/my?type=workflow&limit=1');
+                const token = localStorage.getItem('token');
+                const [totalRes, unreadRes, workflowRes, systemRes] = await Promise.all([
+                    fetch('/api/notification/my?limit=0', { headers: { 'Authorization': 'Bearer ' + token } }),
+                    fetch('/api/notification/my/unread-count', { headers: { 'Authorization': 'Bearer ' + token } }),
+                    fetch('/api/notification/my?limit=0&type=workflow', { headers: { 'Authorization': 'Bearer ' + token } }),
+                    fetch('/api/notification/my?limit=0&type=system', { headers: { 'Authorization': 'Bearer ' + token } })
+                ]);
+                const totalData = await totalRes.json();
+                const unreadData = await unreadRes.json();
+                const workflowData = await workflowRes.json();
+                const systemData = await systemRes.json();
+                this.total = totalData.total || 0;
+                this.unread_count = unreadData.unread_count || 0;
                 this.workflow_count = workflowData.total || 0;
-
-                // 获取系统通知数量
-                const systemData = await apiRequest('/notification/my?type=system&limit=1');
                 this.system_count = systemData.total || 0;
             } catch (err) {
                 console.error('加载统计失败:', err);
             }
         },
+        getTypeName(type) {
+            const names = {
+                'workflow': '工作流',
+                'system': '系统',
+                'task': '任务'
+            };
+            return names[type] || type;
+        },
+        getTypeClass(type) {
+            const classes = {
+                'workflow': 'bg-purple-100 text-purple-600',
+                'system': 'bg-gray-100 text-gray-600',
+                'task': 'bg-blue-100 text-blue-600'
+            };
+            return classes[type] || 'bg-gray-100 text-gray-600';
+        },
+        getItemClass(type) {
+            const classes = {
+                'workflow': 'bg-purple-100 text-purple-600',
+                'system': 'bg-gray-100 text-gray-600',
+                'task': 'bg-blue-100 text-blue-600'
+            };
+            return classes[type] || 'bg-gray-100 text-gray-600';
+        },
+        formatTime(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = now - date;
+            const seconds = diff / 1000;
+            const minutes = seconds / 60;
+            const hours = minutes / 60;
+            const days = hours / 24;
+            if (seconds < 60) return '刚刚';
+            if (minutes < 60) return `${Math.floor(minutes)}分钟前`;
+            if (hours < 24) return `${Math.floor(hours)}小时前`;
+            if (days < 7) return `${Math.floor(days)}天前`;
+            return date.toLocaleDateString('zh-CN');
+        },
         async markAsRead(id) {
             try {
-                await apiRequest(`/notification/${id}/read`, { method: 'PUT' });
-                const item = this.notifications.find(n => n.id === id);
-                if (item) item.is_read = true;
-                this.loadStats();
-                showSuccess('已标记为已读');
+                const token = localStorage.getItem('token');
+                const res = await fetch(`/api/notification/${id}/read`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('已标记为已读');
+                    this.loadNotifications();
+                    this.loadStats();
+                }
             } catch (err) {
-                showError('操作失败');
-            }
-        },
-        async markAsReadAndClose() {
-            if (this.selectedItem) {
-                await this.markAsRead(this.selectedItem.id);
-                this.selectedItem.is_read = true;
+                console.error('标记失败:', err);
+                showError('标记失败');
             }
         },
         async markAllAsRead() {
             try {
-                await apiRequest('/notification/read-all', { method: 'POST' });
-                this.notifications.forEach(n => n.is_read = true);
-                this.unread_count = 0;
-                this.loadStats();
-                showSuccess('已全部标记为已读');
-            } catch (err) {
-                showError('操作失败');
-            }
-        },
-        async deleteRead() {
-            const confirmed = await showConfirm('确定要清空所有已读通知吗？此操作不可恢复。');
-            if (!confirmed) return;
-
-            try {
-                // 删除已读通知（需要后端支持批量删除，这里逐个删除）
-                const readNotifications = this.notifications.filter(n => n.is_read);
-                for (const notif of readNotifications) {
-                    await apiRequest(`/notification/${notif.id}`, { method: 'DELETE' });
+                const token = localStorage.getItem('token');
+                const res = await fetch('/api/notification/read-all', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('全部标记为已读');
+                    this.loadNotifications();
+                    this.loadStats();
                 }
-                this.notifications = this.notifications.filter(n => !n.is_read);
-                this.loadStats();
-                showSuccess('已清空已读通知');
             } catch (err) {
-                showError('删除失败');
+                console.error('标记失败:', err);
+                showError('标记失败');
             }
         },
         async deleteNotification(id) {
-            const confirmed = await showConfirm('确定删除该通知吗？');
-            if (!confirmed) return;
-
+            if (!await showConfirm('确定要删除这条通知吗？', { confirmText: '删除', cancelText: '取消' })) return;
             try {
-                await apiRequest(`/notification/${id}`, { method: 'DELETE' });
-                this.notifications = this.notifications.filter(n => n.id !== id);
-                this.loadStats();
-                showSuccess('删除成功');
+                const token = localStorage.getItem('token');
+                const res = await fetch(`/api/notification/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('删除成功');
+                    this.loadNotifications();
+                    this.loadStats();
+                }
             } catch (err) {
+                console.error('删除失败:', err);
                 showError('删除失败');
+            }
+        },
+        async deleteRead() {
+            if (!await showConfirm('确定要清空所有已读通知吗？', { confirmText: '清空', cancelText: '取消' })) return;
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch('/api/notification/delete-read', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.ok) {
+                    showSuccess('清空成功');
+                    this.loadNotifications();
+                    this.loadStats();
+                }
+            } catch (err) {
+                console.error('清空失败:', err);
+                showError('清空失败');
             }
         },
         viewDetail(item) {
             this.selectedItem = item;
             this.showDetailModal = true;
+        },
+        async markAsReadAndClose() {
+            if (this.selectedItem && !this.selectedItem.is_read) {
+                await this.markAsRead(this.selectedItem.id);
+            }
+            this.showDetailModal = false;
+            this.selectedItem = null;
         },
         prevPage() {
             if (this.skip > 0) {
@@ -347,33 +416,6 @@ createApp({
                 this.skip += this.limit;
                 this.loadNotifications();
             }
-        },
-        formatTime(timeStr) {
-            if (!timeStr) return '';
-            const date = new Date(timeStr);
-            const now = new Date();
-            const diff = now - date;
-            if (diff < 60000) return '刚刚';
-            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
-            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
-            if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
-            return date.toLocaleDateString('zh-CN');
-        },
-        getItemClass(type) {
-            if (type === 'workflow') return 'bg-purple-100 text-purple-600';
-            if (type === 'system') return 'bg-gray-100 text-gray-600';
-            return 'bg-blue-100 text-blue-600';
-        },
-        getTypeClass(type) {
-            if (type === 'workflow') return 'bg-purple-100 text-purple-700';
-            if (type === 'system') return 'bg-gray-100 text-gray-700';
-            return 'bg-blue-100 text-blue-700';
-        },
-        getTypeName(type) {
-            if (type === 'workflow') return '工作流';
-            if (type === 'system') return '系统';
-            if (type === 'task') return '任务';
-            return type;
         }
     }
 }).mount('#app');

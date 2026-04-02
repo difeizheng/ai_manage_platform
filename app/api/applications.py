@@ -79,7 +79,14 @@ def list_applications(
     # 分页查询
     applications = query.order_by(Application.created_at.desc()).offset(skip).limit(limit).all()
 
-    return PaginatedResponse.create(items=applications, total=total, skip=skip, limit=limit)
+    # 使用 model_validate 并设置 from_attributes=True 来序列化 SQLAlchemy 模型
+    return PaginatedResponse[ApplicationResponse].model_validate({
+        "items": applications,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": skip + len(applications) < total
+    })
 
 
 def get_node_pending_users(node_config, db, applicant_department=None):

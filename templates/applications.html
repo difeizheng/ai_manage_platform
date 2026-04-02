@@ -384,7 +384,7 @@ createApp({
             })
             .then(res => res.json())
             .then(data => {
-                this.applications = data;
+                this.applications = data.items || data;
             });
         },
         debounceSearch() {
